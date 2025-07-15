@@ -507,5 +507,5 @@ export default function ConfiguracionPage() {
                 onUserUpdated={handleUserUpdated}
             />
         </>
-    );
+    )
 }
