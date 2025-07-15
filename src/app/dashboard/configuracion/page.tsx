@@ -508,5 +508,4 @@ export default function ConfiguracionPage() {
             />
         </>
     );
-
-    
+}
