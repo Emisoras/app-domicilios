@@ -1,0 +1,1 @@
+This file is a placeholder to ensure the 'public' directory is created. Please move your icon files ('favicon.ico', 'icon.png', 'apple-icon.png') into this 'public' folder. You can safely delete this text file afterward.
