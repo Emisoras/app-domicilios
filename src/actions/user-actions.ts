@@ -199,6 +199,7 @@ export async function updateUser(id: string, formData: z.infer<typeof UserUpdate
         revalidatePath('/dashboard/agentes');
         revalidatePath('/dashboard/domiciliarios');
         revalidatePath('/dashboard/configuracion');
+        revalidatePath('/dashboard');
 
         return { success: true, message: 'Usuario actualizado exitosamente.', user: plainUser };
 
@@ -227,5 +228,26 @@ export async function deleteUser(id: string) {
     } catch (error) {
         console.error('Error deleting user:', error);
         return { success: false, message: 'No se pudo eliminar el usuario.' };
+    }
+}
+
+export async function updateUserLocation(userId: string, location: { lat: number, lng: number, bearing: number }) {
+    try {
+        await connectDB();
+        await UserModel.findByIdAndUpdate(userId, {
+            $set: {
+                currentLocation: {
+                    type: 'Point',
+                    coordinates: [location.lng, location.lat],
+                },
+                bearing: location.bearing,
+            }
+        });
+        // We revalidate the dashboard path so admins can see the location update
+        revalidatePath('/dashboard');
+        return { success: true };
+    } catch (error) {
+        console.error(`Error updating location for user ${userId}:`, error);
+        return { success: false, message: 'Could not update location.' };
     }
 }

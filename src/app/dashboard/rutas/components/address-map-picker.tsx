@@ -25,33 +25,34 @@ const AddressMapPicker = ({ center, onLocationChange }: AddressMapPickerProps) =
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<LeafletMap | null>(null);
     const markerRef = useRef<LeafletMarker | null>(null);
-    const [isMounted, setIsMounted] = useState(false);
-
-    // This is to prevent leaflet from running on the server
-    useEffect(() => {
-        setIsMounted(true);
-    }, []);
 
     // Initialize map
     useEffect(() => {
-        if (!isMounted || !mapContainerRef.current || mapRef.current) return;
+        if (mapContainerRef.current && !mapRef.current) {
+            const map = L.map(mapContainerRef.current).setView([center.lat, center.lng], 15);
 
-        const map = L.map(mapContainerRef.current).setView([center.lat, center.lng], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(map);
+            mapRef.current = map;
+            
+            // This is a hack to resize the map when the dialog opens, as it might not have dimensions initially
+            setTimeout(() => {
+              if (mapRef.current) {
+                mapRef.current.invalidateSize();
+              }
+            }, 400);
+        }
 
-        mapRef.current = map;
-        
-        // This is a hack to resize the map when the dialog opens, as it might not have dimensions initially
-        setTimeout(() => {
-          if (mapRef.current) {
-            mapRef.current.invalidateSize();
-          }
-        }, 400);
-
-    }, [isMounted, center.lat, center.lng]);
+        // Cleanup function to destroy the map instance
+        return () => {
+            if (mapRef.current) {
+                mapRef.current.remove();
+                mapRef.current = null;
+            }
+        };
+    }, [center.lat, center.lng]);
 
     // Update marker and view
     useEffect(() => {
@@ -83,9 +84,6 @@ const AddressMapPicker = ({ center, onLocationChange }: AddressMapPickerProps) =
         }
     }, [center, onLocationChange]);
 
-    if (!isMounted) {
-        return <div className="h-full w-full bg-muted rounded-lg animate-pulse" />;
-    }
 
     return <div ref={mapContainerRef} className="w-full h-full rounded-lg z-0" />;
 };

@@ -1,8 +1,9 @@
+
 'use client';
 
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
-import type { Map as LeafletMap, LayerGroup } from 'leaflet';
+import type { Map as LeafletMap, LayerGroup, Marker as LeafletMarker } from 'leaflet';
 import type { Order, Location, User } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 
@@ -58,26 +59,33 @@ const createPendingIcon = () => {
     });
 };
 
-const createMotorcycleIcon = (color: string) => {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" width="32px" height="32px" style="filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));">
-        <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5s1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
-    </svg>
-  `;
-  return new L.DivIcon({
-      html: svg,
-      className: 'bg-transparent border-none',
-      iconSize: [32, 32],
-      iconAnchor: [16, 16],
-  });
+const createMotorcycleIcon = (color: string, bearing: number = 0) => {
+    const svg = `
+      <svg width="38" height="38" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${bearing}deg); transition: transform 0.5s ease-out; filter: drop-shadow(0px 4px 4px rgba(0,0,0,0.4));">
+          <g stroke="${color}" stroke-width="35" stroke-linecap="round" stroke-linejoin="round">
+            <path fill="#fff" d="M192 224h128v104a40 40 0 01-40 40h-48a40 40 0 01-40-40.24V224Z"/>
+            <path fill="#fff" d="M256 368v48l-48 48h144l-48-48v-48"/>
+            <path fill="none" d="M352 224c0-39.76 32.24-72 72-72h0a72 72 0 0172 72h-144Z"/>
+            <circle fill="${color}" cx="352" cy="152" r="32"/>
+            <path fill="#fff" d="M160 224c0-39.76-32.24-72-72-72h0a72 72 0 00-72 72h144Z"/>
+            <circle fill="${color}" cx="160" cy="152" r="32"/>
+          </g>
+      </svg>
+    `;
+    return new L.DivIcon({
+        html: svg,
+        className: 'bg-transparent border-none',
+        iconSize: [38, 38],
+        iconAnchor: [19, 19],
+    });
 };
-
 
 export interface RouteInfo {
     deliveryPerson: User;
     orders: Order[];
     color: string;
-    currentLocation?: Location & { lat: number, lng: number };
+    currentLocation?: { lat: number, lng: number };
+    bearing?: number;
     optimizedPolyline?: string | null;
 }
 
@@ -126,6 +134,7 @@ const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, opti
     const mapRef = useRef<LeafletMap | null>(null);
     const markersRef = useRef<LayerGroup>(new L.LayerGroup());
     const polylinesRef = useRef<LayerGroup>(new L.LayerGroup());
+    const motorcycleMarkersRef = useRef<Record<string, LeafletMarker>>({});
     const { toast } = useToast();
 
     useEffect(() => {
@@ -149,7 +158,7 @@ const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, opti
                 mapRef.current = null;
             }
         };
-    }, [pharmacyLocation]);
+    }, []); // Only runs once on mount
 
     useEffect(() => {
         if (!mapRef.current) return;
@@ -168,19 +177,23 @@ const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, opti
         
         // Draw the optimized route for PENDING orders if a polyline is provided
         if (optimizedPolyline) {
-            const decodedPath = decodePolyline(optimizedPolyline);
-            const polyline = L.polyline(decodedPath, { color: 'hsl(var(--primary))', weight: 5, opacity: 0.7 });
-            polylinesRef.current.addLayer(polyline);
+            try {
+                const decodedPath = decodePolyline(optimizedPolyline);
+                const polyline = L.polyline(decodedPath, { color: 'hsl(var(--primary))', weight: 5, opacity: 0.7 });
+                polylinesRef.current.addLayer(polyline);
 
-            pendingOrders.forEach((order, index) => {
-                 if (order.deliveryLocation.lat && order.deliveryLocation.lng) {
-                    const position: L.LatLngExpression = [order.deliveryLocation.lat, order.deliveryLocation.lng];
-                    allMarkersBounds.push(L.latLng(position as L.LatLngTuple));
-                    const marker = L.marker(position, { icon: createRoutePointIcon(index + 1, 'hsl(var(--primary))') })
-                        .bindPopup(`<b>Ruta Optimizada</b><br/>#${index + 1} - Pedido de ${order.client.fullName}<br />${order.deliveryLocation.address}`);
-                    markersRef.current.addLayer(marker);
-                 }
-            });
+                pendingOrders.forEach((order, index) => {
+                     if (order.deliveryLocation.lat && order.deliveryLocation.lng) {
+                        const position: L.LatLngExpression = [order.deliveryLocation.lat, order.deliveryLocation.lng];
+                        allMarkersBounds.push(L.latLng(position as L.LatLngTuple));
+                        const marker = L.marker(position, { icon: createRoutePointIcon(index + 1, 'hsl(var(--primary))') })
+                            .bindPopup(`<b>Ruta Optimizada</b><br/>#${index + 1} - Pedido de ${order.client.fullName}<br />${order.deliveryLocation.address}`);
+                        markersRef.current.addLayer(marker);
+                     }
+                });
+            } catch (e) {
+                console.error("Failed to decode optimized polyline:", e);
+            }
 
         } else {
              // Draw pending orders (not optimized) as individual gray markers
@@ -195,25 +208,51 @@ const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, opti
             });
         }
         
-        // Draw ASSIGNED routes
+        // --- Manage motorcycle markers for assigned routes ---
+        const currentMotorcycleIds = new Set(routes.map(r => r.deliveryPerson.id));
+
+        // Remove markers for routes that are no longer assigned
+        Object.keys(motorcycleMarkersRef.current).forEach(personId => {
+            if (!currentMotorcycleIds.has(personId)) {
+                motorcycleMarkersRef.current[personId].remove();
+                delete motorcycleMarkersRef.current[personId];
+            }
+        });
+
         routes.forEach(route => {
-            // Draw the optimized polyline for this assigned route if it exists
-            if(route.optimizedPolyline) {
-                const decodedPath = decodePolyline(route.optimizedPolyline);
-                const polyline = L.polyline(decodedPath, { color: route.color, weight: 5, opacity: 0.7 });
-                polylinesRef.current.addLayer(polyline);
+            if (route.optimizedPolyline) {
+                try {
+                    const decodedPath = decodePolyline(route.optimizedPolyline);
+                    const polyline = L.polyline(decodedPath, { color: route.color, weight: 5, opacity: 0.7 });
+                    polylinesRef.current.addLayer(polyline);
+                } catch(e) {
+                    console.error("Failed to decode assigned route polyline:", e);
+                }
             }
 
-            // Draw motorcycle icon at the pharmacy location for now
-            if (route.currentLocation?.lat && route.currentLocation?.lng) {
-                const motorcycleMarker = L.marker([route.currentLocation.lat, route.currentLocation.lng], {
-                    icon: createMotorcycleIcon(route.color),
-                    zIndexOffset: 1000
-                }).bindPopup(`<b>${route.deliveryPerson.name}</b><br/>En ruta desde la farmacia`);
-                markersRef.current.addLayer(motorcycleMarker);
+            const personId = route.deliveryPerson.id;
+            const hasValidCurrentLocation = route.currentLocation && typeof route.currentLocation.lat === 'number' && typeof route.currentLocation.lng === 'number';
+            const location = hasValidCurrentLocation ? route.currentLocation! : { lat: pharmacyLocation.lat, lng: pharmacyLocation.lng };
+
+            if (typeof location.lat !== 'number' || typeof location.lng !== 'number') {
+                return; // Skip this motorcycle if location is still invalid
             }
-            
-            // Draw markers for each stop in the route
+
+            const icon = createMotorcycleIcon(route.color, route.bearing);
+
+            if (motorcycleMarkersRef.current[personId]) {
+                motorcycleMarkersRef.current[personId].setLatLng([location.lat, location.lng]);
+                motorcycleMarkersRef.current[personId].setIcon(icon);
+            } else {
+                const motorcycleMarker = L.marker([location.lat, location.lng], {
+                    icon,
+                    zIndexOffset: 1000
+                }).bindPopup(`<b>${route.deliveryPerson.name}</b><br/>${hasValidCurrentLocation ? 'En ruta...' : 'En la droguería'}`);
+                motorcycleMarker.addTo(map);
+                motorcycleMarkersRef.current[personId] = motorcycleMarker;
+            }
+            allMarkersBounds.push(L.latLng(location.lat, location.lng));
+
             route.orders.forEach((order, index) => {
                 if (order.deliveryLocation.lat && order.deliveryLocation.lng) {
                     const position: L.LatLngExpression = [order.deliveryLocation.lat, order.deliveryLocation.lng];
@@ -226,8 +265,7 @@ const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, opti
             });
         });
         
-        // Adjust map view to fit all markers
-        if (allMarkersBounds.length > 1) {
+        if (allMarkersBounds.length > 1 && map.getBoundsZoom(L.latLngBounds(allMarkersBounds))) {
             map.fitBounds(L.latLngBounds(allMarkersBounds), { padding: [50, 50] });
         } else if (allMarkersBounds.length === 1) {
              map.setView(allMarkersBounds[0], 15);

@@ -1,10 +1,12 @@
+
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Bike, DollarSign, Package, Map, ListOrdered } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { getDashboardStats, getOrders, getOrdersByDeliveryPerson } from "@/actions/order-actions";
+import { getDashboardStats, getOrders } from "@/actions/order-actions";
 import { getUsers, getUserById } from '@/actions/user-actions';
 import { WeeklyRevenueChart } from "./components/weekly-revenue-chart";
 import type { OrderStatus, Order, User } from "@/types";
@@ -30,13 +32,14 @@ const groupOrdersByDeliveryPerson = (orders: Order[]): Record<string, Order[]> =
     const assignedOrders = orders.filter(o => (o.status === 'in_transit' || o.status === 'assigned') && o.assignedTo);
 
     return assignedOrders.reduce<Record<string, Order[]>>((acc, order) => {
-        if (!order.assignedTo) return acc;
-        const personId = order.assignedTo.id;
-        if (!acc[personId]) {
-            acc[personId] = [];
+        if (order.assignedTo) {
+            const personId = order.assignedTo.id;
+            if (!acc[personId]) {
+                acc[personId] = [];
+            }
+            acc[personId].push(order);
+            acc[personId].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         }
-        acc[personId].push(order);
-        acc[personId].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         return acc;
     }, {});
 };
@@ -58,7 +61,7 @@ export default async function DashboardPage() {
   // Fetch data based on user role
   const [stats, allOrders, deliveryPeople, pharmacySettings] = await Promise.all([
     getDashboardStats(currentUser),
-    isDeliveryPerson ? getOrdersByDeliveryPerson(currentUser.id) : getOrders(),
+    getOrders(), // Always fetch all orders
     isDeliveryPerson ? [] : getUsers('delivery'),
     getPharmacySettings(),
   ]);
@@ -82,7 +85,14 @@ export default async function DashboardPage() {
         .filter(o => o.status === 'pending')
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     
-  const assignedRoutes = groupOrdersByDeliveryPerson(allOrders);
+  let assignedRoutes = groupOrdersByDeliveryPerson(allOrders);
+  
+  // If the user is a delivery person, filter routes to only show their own
+  if (isDeliveryPerson) {
+      const myRoute = assignedRoutes[currentUser.id];
+      assignedRoutes = myRoute ? { [currentUser.id]: myRoute } : {};
+  }
+
 
   const routesForMapPromises = Object.entries(assignedRoutes)
     .map(async ([personId, orders], index) => {
@@ -108,7 +118,8 @@ export default async function DashboardPage() {
                 deliveryPerson,
                 orders: reorderedOrders,
                 color: ROUTE_COLORS[index % ROUTE_COLORS.length],
-                currentLocation: pharmacyLocation, // Placeholder
+                currentLocation: deliveryPerson.currentLocation,
+                bearing: deliveryPerson.bearing,
                 optimizedPolyline: optimizationResult.encodedPolyline,
             };
         } catch (error) {
@@ -118,7 +129,8 @@ export default async function DashboardPage() {
                 deliveryPerson,
                 orders,
                 color: ROUTE_COLORS[index % ROUTE_COLORS.length],
-                currentLocation: pharmacyLocation,
+                currentLocation: deliveryPerson.currentLocation,
+                bearing: deliveryPerson.bearing,
                 optimizedPolyline: null,
             };
         }

@@ -13,9 +13,25 @@ const UserSchema: Schema<UserDocument> = new Schema({
     status: { type: String, enum: ['available', 'in_route', 'offline'] },
     activeRoute: { type: String },
     password: { type: String, required: false },
+    currentLocation: {
+        type: {
+            type: String,
+            enum: ['Point'],
+            default: 'Point'
+        },
+        coordinates: {
+            type: [Number], // [longitude, latitude]
+            default: undefined
+        }
+    },
+    bearing: { type: Number, default: 0 }
 }, {
     timestamps: true // Adds createdAt and updatedAt
 });
+
+// Create a 2dsphere index for geospatial queries
+UserSchema.index({ currentLocation: '2dsphere' });
+
 
 const UserModel: Model<UserDocument> = models.User || mongoose.model<UserDocument>('User', UserSchema);
 

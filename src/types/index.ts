@@ -11,6 +11,11 @@ export interface User {
   status?: DeliveryStatus;
   activeRoute?: string | null;
   password?: string;
+  currentLocation?: {
+    lat: number;
+    lng: number;
+  };
+  bearing?: number;
 }
 
 export interface Location {
