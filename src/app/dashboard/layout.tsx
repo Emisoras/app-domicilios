@@ -38,6 +38,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         <main className="flex-1 p-4 sm:px-6 sm:py-0 md:gap-8">
           {children}
         </main>
+        <footer className="text-center text-xs text-muted-foreground p-4">
+            Copyright © 2025. Todos los derechos reservados. Diseñado por C &amp; J Soluciones en Ingeniería.
+        </footer>
       </div>
     </div>
   );

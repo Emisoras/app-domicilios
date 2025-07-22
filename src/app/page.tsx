@@ -45,52 +45,57 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-secondary/50 p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4">
-            <Logo className="h-12 w-12 text-primary" />
-          </div>
-          <CardTitle className="font-headline text-2xl">Droguería Avenida</CardTitle>
-          <CardDescription>Ingresa a la plataforma de domicilios</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
-             {error && (
-                <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                </Alert>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="cedula">Cédula o ID de usuario</Label>
-              <Input 
-                id="cedula" 
-                type="text" 
-                placeholder="Tu número de cédula" 
-                required 
-                value={cedula}
-                onChange={(e) => setCedula(e.target.value)}
-                disabled={isLoading}
-              />
+    <div className="flex min-h-screen flex-col items-center justify-center bg-secondary/50 p-4">
+      <main className="flex flex-1 flex-col items-center justify-center">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4">
+              <Logo className="h-12 w-12 text-primary" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
-              <Input 
-                id="password" 
-                type="password" 
-                required 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isLoading ? 'Ingresando...' : 'Ingresar'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </main>
+            <CardTitle className="font-headline text-2xl">Droguería Avenida</CardTitle>
+            <CardDescription>Ingresa a la plataforma de domicilios</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleLogin} className="space-y-4">
+               {error && (
+                  <Alert variant="destructive">
+                      <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="cedula">Cédula o ID de usuario</Label>
+                <Input 
+                  id="cedula" 
+                  type="text" 
+                  placeholder="Tu número de cédula" 
+                  required 
+                  value={cedula}
+                  onChange={(e) => setCedula(e.target.value)}
+                  disabled={isLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Contraseña</Label>
+                <Input 
+                  id="password" 
+                  type="password" 
+                  required 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={isLoading}
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isLoading ? 'Ingresando...' : 'Ingresar'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </main>
+      <footer className="py-4 text-center text-xs text-muted-foreground">
+        Copyright © 2025. Todos los derechos reservados. Diseñado por C &amp; J Soluciones en Ingeniería.
+      </footer>
+    </div>
   );
 }
