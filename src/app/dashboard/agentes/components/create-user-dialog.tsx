@@ -20,12 +20,12 @@ const formSchema = z.object({
     password: z.string().min(6, { message: "La contraseña debe tener al menos 6 caracteres." }),
 });
 
-interface CreateDeliveryPersonDialogProps {
+interface CreateUserDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }
 
-export function CreateDeliveryPersonDialog({ open, onOpenChange }: CreateDeliveryPersonDialogProps) {
+export function CreateUserDialog({ open, onOpenChange }: CreateUserDialogProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const { toast } = useToast();
 
@@ -41,11 +41,12 @@ export function CreateDeliveryPersonDialog({ open, onOpenChange }: CreateDeliver
 
     const onSubmit = async (values: z.infer<typeof formSchema>) => {
         setIsSubmitting(true);
-        const result = await createUser({ ...values, role: 'delivery' });
+        // The role is now defaulted to 'agent' in the server action
+        const result = await createUser(values);
         
         if (result.success) {
             toast({
-                title: "Domiciliario Creado",
+                title: "Usuario Creado",
                 description: result.message,
             });
             form.reset();
@@ -53,7 +54,7 @@ export function CreateDeliveryPersonDialog({ open, onOpenChange }: CreateDeliver
         } else {
             toast({
                 variant: 'destructive',
-                title: 'Error al crear domiciliario',
+                title: 'Error al crear usuario',
                 description: result.message,
             });
         }
@@ -64,9 +65,9 @@ export function CreateDeliveryPersonDialog({ open, onOpenChange }: CreateDeliver
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Añadir Nuevo Domiciliario</DialogTitle>
+                    <DialogTitle>Añadir Nuevo Usuario</DialogTitle>
                     <DialogDescription>
-                        Ingresa la información del nuevo miembro del equipo de entregas.
+                        Ingresa la información del nuevo miembro del equipo. Se creará con el rol de 'Agente' por defecto.
                     </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
@@ -78,7 +79,7 @@ export function CreateDeliveryPersonDialog({ open, onOpenChange }: CreateDeliver
                                 <FormItem>
                                     <FormLabel>Nombre Completo</FormLabel>
                                     <FormControl>
-                                        <Input placeholder="Ej: Mario Rojas" {...field} />
+                                        <Input placeholder="Ej: Carolina Mesa" {...field} />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -127,7 +128,7 @@ export function CreateDeliveryPersonDialog({ open, onOpenChange }: CreateDeliver
                             <Button type="button" variant="outline" onClick={() => { if (!isSubmitting) { form.reset(); onOpenChange(false); }}}>Cancelar</Button>
                             <Button type="submit" disabled={isSubmitting}>
                                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                {isSubmitting ? 'Guardando...' : 'Guardar Domiciliario'}
+                                {isSubmitting ? 'Guardando...' : 'Guardar Usuario'}
                             </Button>
                         </DialogFooter>
                     </form>

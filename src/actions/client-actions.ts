@@ -47,7 +47,8 @@ export async function createClient(formData: { fullName: string; phone: string; 
     return { success: true, message: `Cliente ${validatedFields.data.fullName} creado.` };
   } catch (error: any) {
     console.error('Error creating client:', error);
-    if (error.code === 11000) { // Duplicate key error
+    // Handle duplicate key error for the phone number
+    if (error.code === 11000 || error.message.includes('duplicate key')) {
         return { success: false, message: 'Ya existe un cliente con este número de teléfono.' };
     }
     return { success: false, message: 'No se pudo crear el cliente.' };

@@ -41,7 +41,7 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
 
     const onSubmit = async (values: z.infer<typeof formSchema>) => {
         setIsSubmitting(true);
-        const result = await createUser(values, 'agent');
+        const result = await createUser({ ...values, role: 'agent' });
         
         if (result.success) {
             toast({
@@ -66,7 +66,7 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
                 <DialogHeader>
                     <DialogTitle>Añadir Nuevo Agente</DialogTitle>
                     <DialogDescription>
-                        Ingresa la información del nuevo miembro del equipo. Se guardará en la base de datos.
+                        Ingresa la información del nuevo miembro del equipo de call center.
                     </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>

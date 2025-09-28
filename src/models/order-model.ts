@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, models, Model, Types } from 'mongoose';
 import type { Order as OrderType, Location, OrderItem } from '@/types';
+import UserModel from './user-model'; // Import User model to ensure it's registered
 
 const LocationSchema: Schema<Location> = new Schema({
     address: { type: String, required: true },
