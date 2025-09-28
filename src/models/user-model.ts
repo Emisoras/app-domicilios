@@ -1,6 +1,20 @@
 import mongoose, { Schema, Document, models, Model } from 'mongoose';
 import type { User as UserType } from '@/types';
 
+// Define a schema for the GeoJSON Point
+const PointSchema = new Schema({
+    type: {
+        type: String,
+        enum: ['Point'],
+        required: true
+    },
+    coordinates: {
+        type: [Number], // [longitude, latitude]
+        required: true
+    }
+}, { _id: false });
+
+
 // The User interface from types/index.ts might need to be extended for the document
 export interface UserDocument extends Omit<UserType, 'id'>, Document {}
 
@@ -10,28 +24,25 @@ const UserSchema: Schema<UserDocument> = new Schema({
     cedula: { type: String, required: true, unique: true },
     phone: { type: String, required: true },
     avatarUrl: { type: String },
-    status: { type: String, enum: ['available', 'in_route', 'offline'] },
-    activeRoute: { type: String },
-    password: { type: String, required: false },
-    currentLocation: {
-        type: {
-            type: String,
-            enum: ['Point'],
-            default: 'Point'
-        },
-        coordinates: {
-            type: [Number], // [longitude, latitude]
-            default: undefined
-        }
+    status: { 
+        type: String, 
+        required: true,
+        enum: ['available', 'in_route', 'offline'],
     },
-    bearing: { type: Number, default: 0 }
+    activeRoute: { type: String },
+    password: { type: String, required: true },
+    currentLocation: {
+        type: PointSchema,
+        required: false, // Explicitly not required on creation
+        index: '2dsphere' // Crucial for geospatial queries
+    },
+    bearing: {
+        type: Number,
+        required: false,
+    },
 }, {
     timestamps: true // Adds createdAt and updatedAt
 });
-
-// Create a 2dsphere index for geospatial queries
-UserSchema.index({ currentLocation: '2dsphere' });
-
 
 const UserModel: Model<UserDocument> = models.User || mongoose.model<UserDocument>('User', UserSchema);
 

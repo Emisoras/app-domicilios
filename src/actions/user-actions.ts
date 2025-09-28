@@ -13,6 +13,7 @@ const UserCreateSchema = z.object({
     phone: z.string().regex(/^\d{10}$/, { message: "El teléfono debe tener 10 dígitos." }),
     cedula: z.string().min(5, { message: "La cédula debe tener al menos 5 caracteres." }),
     password: z.string().min(6, { message: "La contraseña debe tener al menos 6 caracteres." }),
+    role: z.enum(['admin', 'agent', 'delivery']),
 });
 
 // Schema for updating a user (all fields are optional for partial updates)
@@ -34,6 +35,7 @@ function toPlainObject(doc: UserDocument | null): any {
     return plain;
 }
 
+
 export async function loginUser(credentials: { cedula: string, password?: string }) {
     const { cedula, password } = credentials;
 
@@ -43,22 +45,7 @@ export async function loginUser(credentials: { cedula: string, password?: string
 
     try {
         await connectDB();
-
-        // Self-seeding for the initial admin user
-        const adminCedula = '1091656511';
-        let adminUser = await UserModel.findOne({ cedula: adminCedula });
-        if (!adminUser) {
-            const hashedPassword = await bcrypt.hash('admin1234', 10);
-            adminUser = new UserModel({
-                name: 'Camilo Toro',
-                phone: '3156765529',
-                cedula: adminCedula,
-                password: hashedPassword,
-                role: 'admin',
-            });
-            await adminUser.save();
-        }
-
+        
         const user = await UserModel.findOne({ cedula });
         
         if (!user) {
@@ -129,43 +116,62 @@ export async function getUserById(id: string) {
 }
 
 
-export async function createUser(formData: z.infer<typeof UserCreateSchema>, role: Role) {
+export async function createUser(formData: z.infer<typeof UserCreateSchema>) {
     const validatedFields = UserCreateSchema.safeParse(formData);
     if (!validatedFields.success) {
         return { success: false, message: 'Datos inválidos. Por favor, revisa el formulario.' };
     }
     
-    const { name, phone, cedula, password } = validatedFields.data;
+    const { name, phone, cedula, password, role } = validatedFields.data;
 
-    try {
-        await connectDB();
+    await connectDB();
 
-        const existingUser = await UserModel.findOne({ cedula });
-        if (existingUser) {
+    const existingUser = await UserModel.findOne({ $or: [{ cedula }, { phone }] });
+    if (existingUser) {
+        if (existingUser.cedula === cedula) {
             return { success: false, message: 'Ya existe un usuario con esta cédula.' };
         }
+        if (existingUser.phone === phone) {
+            return { success: false, message: 'Ya existe un usuario con este número de teléfono.' };
+        }
+    }
 
+    try {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const newUser = new UserModel({
             name,
             phone,
             cedula,
-            role,
             password: hashedPassword,
-            status: role === 'delivery' ? 'offline' : undefined,
+            role: role,
+            status: role === 'delivery' ? 'available' : 'offline',
         });
 
         await newUser.save();
         
-        if(role === 'agent') revalidatePath('/dashboard/agentes');
-        if(role === 'delivery') revalidatePath('/dashboard/domiciliarios');
+        revalidatePath('/dashboard/agentes');
+        revalidatePath('/dashboard/domiciliarios');
         
-        return { success: true, message: `Usuario ${name} creado exitosamente.` };
+        return { success: true, message: `Usuario ${name} creado exitosamente como ${role}.` };
 
     } catch (error: any) {
-        console.error('Error creating user:', error);
-        return { success: false, message: 'No se pudo crear el usuario.' };
+        console.error('Error saving new user:', error);
+        if (error.code === 11000) {
+            const field = Object.keys(error.keyValue)[0];
+            if (field === 'phone') {
+                return { success: false, message: 'Ya existe un usuario con este número de teléfono.' };
+            }
+             if (field === 'cedula') {
+                return { success: false, message: 'Ya existe un usuario con esta cédula.' };
+            }
+            return { success: false, message: `Ya existe un usuario con ese valor para el campo '${field}'.` };
+        }
+        if (error.name === 'ValidationError') {
+            const messages = Object.values(error.errors).map((err: any) => err.message).join(', ');
+            return { success: false, message: `Error de validación: ${messages}` };
+        }
+        return { success: false, message: 'No se pudo crear el usuario. Ocurrió un error en la base de datos.' };
     }
 }
 
@@ -187,7 +193,7 @@ export async function updateUser(id: string, formData: z.infer<typeof UserUpdate
             updatePayload.password = await bcrypt.hash(password, 10);
         }
 
-        const user = await UserModel.findByIdAndUpdate(id, updatePayload, { new: true });
+        const user = await UserModel.findByIdAndUpdate(id, { $set: updatePayload }, { new: true, runValidators: true });
         
         if (!user) {
             return { success: false, message: 'Usuario no encontrado.' };
@@ -241,10 +247,11 @@ export async function updateUserLocation(userId: string, location: { lat: number
                     coordinates: [location.lng, location.lat],
                 },
                 bearing: location.bearing,
+                status: 'in_route', // Automatically set status to in_route when location is updated
             }
         });
-        // We revalidate the dashboard path so admins can see the location update
         revalidatePath('/dashboard');
+        revalidatePath('/dashboard/domiciliarios');
         return { success: true };
     } catch (error) {
         console.error(`Error updating location for user ${userId}:`, error);
