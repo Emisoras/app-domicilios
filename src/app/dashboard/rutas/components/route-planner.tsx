@@ -14,7 +14,6 @@ import { AssignDeliveryDialog } from './assign-delivery-dialog';
 import { useToast } from "@/hooks/use-toast";
 import { optimizePharmacyRoute } from '@/ai/flows/optimize-pharmacy-route';
 import { Skeleton } from '@/components/ui/skeleton';
-import { sendWhatsAppNotification } from '@/lib/whatsapp';
 import type { RouteInfo } from '@/components/dashboard/map-component';
 import { OrderDetailsDialog } from '../../pedidos/components/order-details-dialog';
 import { updateOrderStatus } from '@/actions/order-actions';
@@ -56,17 +55,6 @@ export function RoutePlanner({ initialPendingOrders, initialAssignedRoutes, deli
     setAssignedRoutes(initialAssignedRoutes);
   }, [initialPendingOrders, initialAssignedRoutes]);
 
-
-  const handleOrderCreated = (newOrder: Order) => {
-    // The state will be updated by revalidation, but we can optimistically show the notification
-    setCreateDialogOpen(false);
-    sendWhatsAppNotification(newOrder.client.phone, 'created', newOrder);
-    toast({
-      title: "Pedido Creado",
-      description: `Se abrió WhatsApp para notificar a ${newOrder.client.fullName}. El pedido está listo para optimización y asignación.`,
-    });
-  };
-
   const handleOpenAssignDialog = (order: Order) => {
     setSelectedOrder(order);
     setAssignDialogOpen(true);
@@ -77,20 +65,13 @@ export function RoutePlanner({ initialPendingOrders, initialAssignedRoutes, deli
   };
   
   const handleConfirmAssignment = async (orderId: string, deliveryPerson: User) => {
-    const result = await updateOrderStatus(orderId, 'in_transit', deliveryPerson.id);
+    const result = await updateOrderStatus(orderId, 'assigned', deliveryPerson);
 
-    if (result.success) {
-        // Find the order that was updated to notify the client
-        const allOrders = [...pendingOrders, ...Object.values(assignedRoutes).flat()];
-        const order = allOrders.find(o => o.id === orderId);
-        
-        if (order) {
-            sendWhatsAppNotification(order.client.phone, 'in_transit', { ...order, assignedTo: deliveryPerson });
-            toast({
-                title: 'Pedido en Camino',
-                description: `Se asignó a ${deliveryPerson.name} y se abrió WhatsApp para notificar que el pedido #${orderId.slice(-6)} está en ruta.`,
-            });
-        }
+    if (result.success && result.order) {
+        toast({
+            title: 'Pedido Asignado',
+            description: `El pedido #${orderId.slice(-6)} se asignó a ${deliveryPerson.name}. Se enviará una notificación.`,
+        });
         // After assigning an order that was part of an optimized route, clear the polyline
         setOptimizedPolyline(null);
     } else {
@@ -257,7 +238,6 @@ export function RoutePlanner({ initialPendingOrders, initialAssignedRoutes, deli
       <CreateOrderDialog 
         open={isCreateDialogOpen} 
         onOpenChange={setCreateDialogOpen}
-        onOrderCreated={handleOrderCreated}
         agent={agent}
         clients={clients}
         pharmacyLocation={pharmacyLocation}

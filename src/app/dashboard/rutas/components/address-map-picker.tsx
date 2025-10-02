@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import type { Map as LeafletMap, Marker as LeafletMarker } from 'leaflet';
 
@@ -52,36 +52,40 @@ const AddressMapPicker = ({ center, onLocationChange }: AddressMapPickerProps) =
                 mapRef.current = null;
             }
         };
-    }, [center.lat, center.lng]);
+    }, []); // Only run on mount to create/destroy map instance
 
-    // Update marker and view
+    // Update marker and view when center changes
     useEffect(() => {
         if (!mapRef.current) return;
 
         const map = mapRef.current;
         map.setView([center.lat, center.lng], map.getZoom() || 15);
 
-        if (!markerRef.current) {
-            const marker = L.marker([center.lat, center.lng], {
-                draggable: true,
-                icon: L.icon({
-                    iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-                    iconSize: [25, 41],
-                    iconAnchor: [12, 41],
-                    shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-                    shadowSize: [41, 41]
-                })
-            }).addTo(map);
-
-            marker.on('dragend', () => {
-                const newLatLng = marker.getLatLng();
-                onLocationChange({ lat: newLatLng.lat, lng: newLatLng.lng });
-            });
-
-            markerRef.current = marker;
-        } else {
-            markerRef.current.setLatLng([center.lat, center.lng]);
+        // Remove the old marker before adding a new one to ensure it's always fresh
+        if (markerRef.current) {
+            markerRef.current.remove();
         }
+
+        const newMarker = L.marker([center.lat, center.lng], {
+            draggable: true,
+            icon: L.icon({
+                iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+                iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+                shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            })
+        }).addTo(map);
+
+        newMarker.on('dragend', () => {
+            const newLatLng = newMarker.getLatLng();
+            onLocationChange({ lat: newLatLng.lat, lng: newLatLng.lng });
+        });
+
+        markerRef.current = newMarker;
+
     }, [center, onLocationChange]);
 
 

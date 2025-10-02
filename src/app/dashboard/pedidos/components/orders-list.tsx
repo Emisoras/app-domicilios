@@ -37,7 +37,7 @@ export function OrdersList({ initialOrders, deliveryPeople }: OrdersListProps) {
     const { toast } = useToast();
 
     const handleUpdateStatus = async (orderId: string, status: OrderStatus, assignedTo?: User) => {
-        const result = await updateOrderStatus(orderId, status, assignedTo?.id);
+        const result = await updateOrderStatus(orderId, status, assignedTo);
         
         if (result.success) {
              toast({
@@ -109,7 +109,7 @@ export function OrdersList({ initialOrders, deliveryPeople }: OrdersListProps) {
                                                     <DropdownMenuPortal>
                                                         <DropdownMenuSubContent>
                                                             {deliveryPeople.map(person => (
-                                                                <DropdownMenuItem key={person.id} onSelect={() => handleUpdateStatus(pedido.id, 'in_transit', person)}>
+                                                                <DropdownMenuItem key={person.id} onSelect={() => handleUpdateStatus(pedido.id, 'assigned', person)}>
                                                                     {person.name}
                                                                 </DropdownMenuItem>
                                                             ))}

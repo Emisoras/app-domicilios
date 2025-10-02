@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import mongoose from 'mongoose';
+import { sendWhatsAppNotification } from '@/lib/whatsapp';
 
 // Helper to convert Mongoose doc to plain object, including nested ones
 function toPlainObject(doc: any): any {
@@ -185,6 +186,9 @@ export async function createOrder(formData: z.infer<typeof OrderFormSchema>) {
             
         const plainOrder = toPlainObject(populatedOrder);
 
+        // Fire-and-forget notification
+        sendWhatsAppNotification(plainOrder.client.phone, 'created', plainOrder);
+
         return { success: true, message: 'Pedido creado exitosamente.', order: plainOrder };
 
     } catch (error: any) {
@@ -194,24 +198,37 @@ export async function createOrder(formData: z.infer<typeof OrderFormSchema>) {
 }
 
 
-export async function updateOrderStatus(orderId: string, status: OrderStatus, assignedToId?: string) {
+export async function updateOrderStatus(orderId: string, status: OrderStatus, assignedTo?: User) {
     try {
         await connectDB();
         
-        const updatePayload: { status: OrderStatus; assignedTo?: string | null | mongoose.Types.ObjectId } = { status };
+        const updatePayload: { status: OrderStatus; assignedTo?: mongoose.Types.ObjectId | null } = { status };
         
-        if (assignedToId) {
-            updatePayload.assignedTo = new mongoose.Types.ObjectId(assignedToId);
+        if (assignedTo) {
+            updatePayload.assignedTo = new mongoose.Types.ObjectId(assignedTo.id);
         } else if (status === 'pending') {
-            // If we're setting it back to pending, unassign the delivery person
             updatePayload.assignedTo = null;
         }
 
-        const updatedOrder = await OrderModel.findByIdAndUpdate(orderId, { $set: updatePayload }, { new: true });
+        const updatedOrder = await OrderModel.findByIdAndUpdate(orderId, { $set: updatePayload }, { new: true })
+            .populate<{client: Client}>('client')
+            .populate<{createdBy: User}>('createdBy')
+            .populate<{assignedTo: User}>('assignedTo');
+
 
         if (!updatedOrder) {
             return { success: false, message: 'Pedido no encontrado.' };
         }
+        
+        const plainOrder = toPlainObject(updatedOrder);
+
+        // Send notification based on the new status
+        if (status === 'in_transit' || status === 'assigned') {
+            await sendWhatsAppNotification(plainOrder.client.phone, 'in_transit', plainOrder);
+        } else if (status === 'delivered') {
+            await sendWhatsAppNotification(plainOrder.client.phone, 'delivered', plainOrder);
+        }
+
 
         revalidatePath('/dashboard/pedidos');
         revalidatePath('/dashboard/rutas');
@@ -219,7 +236,7 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus, as
         revalidatePath('/dashboard/cuadre-caja');
         revalidatePath('/dashboard');
         
-        return { success: true, message: `Estado del pedido actualizado a ${status}.` };
+        return { success: true, message: `Estado del pedido actualizado a ${status}.`, order: plainOrder };
 
     } catch (error) {
         console.error('Error updating order status:', error);

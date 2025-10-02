@@ -41,13 +41,12 @@ const formSchema = z.object({
 interface CreateOrderDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onOrderCreated: (order: Order) => void;
     agent: User;
     clients: Client[];
     pharmacyLocation: { lat: number, lng: number };
 }
 
-export function CreateOrderDialog({ open, onOpenChange, onOrderCreated, agent, clients, pharmacyLocation }: CreateOrderDialogProps) {
+export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacyLocation }: CreateOrderDialogProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLocating, setIsLocating] = useState(false);
     const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
@@ -163,9 +162,13 @@ export function CreateOrderDialog({ open, onOpenChange, onOrderCreated, agent, c
         });
 
         if (result.success && result.order) {
-            onOrderCreated(result.order);
+            toast({
+                title: "Pedido Creado",
+                description: `El pedido para ${result.order.client.fullName} ha sido creado exitosamente.`,
+            });
             form.reset();
             setLocation(null);
+            onOpenChange(false);
         } else {
             toast({
                 variant: 'destructive',

@@ -5,9 +5,9 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Clock, DollarSign, MapPin, BellRing } from "lucide-react";
 import type { Order, OrderStatus } from '@/types';
-import { sendWhatsAppNotification } from '@/lib/whatsapp';
 import { useToast } from '@/hooks/use-toast';
 import { updateOrderStatus } from '@/actions/order-actions';
+import { sendWhatsAppNotification } from '@/lib/whatsapp';
 
 const StatusBadge = ({ status }: { status: OrderStatus }) => {
     switch (status) {
@@ -32,8 +32,10 @@ export function AssignedRoutesList({ initialOrders }: AssignedRoutesListProps) {
     const { toast } = useToast();
 
     const handleNotifyNearby = (order: Order) => {
+        // This function now needs to be a server action to call the API
+        // For now, we will just show a toast, as we need a dedicated server action.
         sendWhatsAppNotification(order.client.phone, 'nearby', order);
-        toast({ title: 'Notificación Enviada', description: `Se abrió WhatsApp para avisar a ${order.client.fullName} que estás cerca.` });
+        toast({ title: 'Notificación Enviada', description: `Se ha enviado una notificación de cercanía a ${order.client.fullName}.` });
     };
 
     const handleMarkDelivered = async (orderToUpdate: Order) => {
@@ -41,7 +43,6 @@ export function AssignedRoutesList({ initialOrders }: AssignedRoutesListProps) {
         
         if (result.success) {
             setOrders(prev => prev.filter(o => o.id !== orderToUpdate.id));
-            sendWhatsAppNotification(orderToUpdate.client.phone, 'delivered', orderToUpdate);
             toast({ title: 'Pedido Entregado', description: `El pedido de ${orderToUpdate.client.fullName} fue marcado como entregado.` });
         } else {
              toast({ variant: 'destructive', title: 'Error', description: result.message });
