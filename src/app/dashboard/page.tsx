@@ -1,5 +1,6 @@
 
 
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +39,6 @@ const groupOrdersByDeliveryPerson = (orders: Order[]): Record<string, Order[]> =
                 acc[personId] = [];
             }
             acc[personId].push(order);
-            acc[personId].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         }
         return acc;
     }, {});
@@ -124,7 +124,7 @@ export default async function DashboardPage() {
             };
         } catch (error) {
             console.error(`Could not optimize route for ${deliveryPerson.name}:`, error);
-            // Fallback to showing the route without an optimized polyline
+            // Fallback to showing the route without an optimized polyline but with original order
              return {
                 deliveryPerson,
                 orders,
@@ -266,3 +266,4 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
