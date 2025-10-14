@@ -157,7 +157,9 @@ export default function CuadreCajaPage() {
 
     // --- Admin/Agent View ---
     const GeneralCashReconciliation = () => {
-        const totalCash = orders.filter(o => o.paymentMethod === 'cash').reduce((sum, o) => sum + o.total, 0);
+        const totalCash = orders
+            .filter(o => o.paymentMethod === 'cash' && o.paymentAmount)
+            .reduce((sum, o) => sum + (o.paymentAmount || 0), 0);
         const totalTransfer = orders.filter(o => o.paymentMethod === 'transfer').reduce((sum, o) => sum + o.total, 0);
         const totalOrders = orders.length;
         const totalCollected = totalCash + totalTransfer;
@@ -201,7 +203,12 @@ export default function CuadreCajaPage() {
                     {Object.keys(ordersByDeliveryPerson).length > 0 ? (
                         <Accordion type="single" collapsible className="w-full">
                             {Object.entries(ordersByDeliveryPerson).map(([name, personOrders]) => {
-                                const subTotal = personOrders.reduce((sum, order) => sum + order.total, 0);
+                                const subTotal = personOrders.reduce((sum, order) => {
+                                    if (order.paymentMethod === 'cash') {
+                                        return sum + (order.paymentAmount || 0);
+                                    }
+                                    return sum + order.total;
+                                }, 0);
                                 return (
                                     <AccordionItem value={name} key={name}>
                                         <AccordionTrigger className="text-lg font-medium hover:no-underline">
@@ -228,7 +235,9 @@ export default function CuadreCajaPage() {
 
     // --- Delivery Person View ---
     const PersonalCashReconciliation = () => {
-        const totalCash = orders.filter(o => o.paymentMethod === 'cash').reduce((sum, o) => sum + o.total, 0);
+        const totalCash = orders
+            .filter(o => o.paymentMethod === 'cash' && o.paymentAmount)
+            .reduce((sum, o) => sum + (o.paymentAmount || 0), 0);
         const totalTransfer = orders.filter(o => o.paymentMethod === 'transfer').reduce((sum, o) => sum + o.total, 0);
         const totalOrders = orders.length;
         const totalCollected = totalCash + totalTransfer;
@@ -329,5 +338,3 @@ export default function CuadreCajaPage() {
         </div>
     )
 }
-
-    

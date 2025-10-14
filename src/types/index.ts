@@ -54,5 +54,6 @@ export interface Order {
   createdBy: User; // Agent user
   total: number;
   paymentMethod: PaymentMethod;
+  paymentAmount?: number;
   deliveryNotes?: string;
 }

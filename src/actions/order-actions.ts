@@ -141,6 +141,7 @@ const OrderFormSchema = z.object({
   })).min(1, { message: "El pedido debe tener al menos un producto." }),
   total: z.coerce.number().positive({ message: "El total debe ser un número positivo." }),
   paymentMethod: z.enum(['cash', 'transfer']),
+  paymentAmount: z.coerce.number().optional(),
   createdBy: z.string(),
   deliveryNotes: z.string().optional(),
 });
@@ -153,7 +154,7 @@ export async function createOrder(formData: z.infer<typeof OrderFormSchema>) {
         return { success: false, message: `Datos de pedido inválidos: ${errorMessages}` };
     }
 
-    const { clientName, clientPhone, deliveryLocation, items, total, paymentMethod, createdBy, deliveryNotes } = validatedFields.data;
+    const { clientName, clientPhone, deliveryLocation, items, total, paymentMethod, paymentAmount, createdBy, deliveryNotes } = validatedFields.data;
 
     try {
         await connectDB();
@@ -181,6 +182,7 @@ export async function createOrder(formData: z.infer<typeof OrderFormSchema>) {
             items,
             total,
             paymentMethod,
+            paymentAmount,
             createdBy,
             deliveryNotes,
             status: 'pending',

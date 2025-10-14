@@ -179,6 +179,7 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
             items: items,
             total: values.total,
             paymentMethod: values.paymentMethod,
+            paymentAmount: values.paymentAmount,
             createdBy: agent.id,
             deliveryNotes: deliveryNotes
         });
@@ -414,5 +415,3 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
         </Dialog>
     );
 }
-
-    

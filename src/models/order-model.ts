@@ -1,3 +1,4 @@
+
 import mongoose, { Schema, Document, models, Model, Types } from 'mongoose';
 import type { Order as OrderType, Location, OrderItem } from '@/types';
 import UserModel from './user-model'; // Import User model to ensure it's registered
@@ -33,6 +34,7 @@ const OrderSchema: Schema<OrderDocument> = new Schema({
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     total: { type: Number, required: true },
     paymentMethod: { type: String, required: true, enum: ['cash', 'transfer'] },
+    paymentAmount: { type: Number },
     deliveryNotes: { type: String },
 }, {
     timestamps: true // This will add createdAt and updatedAt
