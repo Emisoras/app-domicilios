@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import dynamic from 'next/dynamic';
 import type { BadgeProps } from "@/components/ui/badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,11 @@ import type { PharmacySettings } from '@/models/pharmacy-settings-model';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
+const PharmacyLocationPicker = dynamic(() => import('./components/pharmacy-location-picker'), {
+  ssr: false,
+  loading: () => <Skeleton className="w-full h-full min-h-[300px] rounded-lg" />,
+});
+
 const roleConfig: Record<Role, { text: string, variant: BadgeProps['variant'] }> = {
     admin: { text: "Admin", variant: 'destructive' },
     agent: { text: "Agente", variant: 'secondary' },
@@ -47,6 +53,8 @@ const pharmacyFormSchema = z.object({
     name: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
     address: z.string().min(5, { message: "La dirección es obligatoria." }),
     phone: z.string().min(7, { message: "El teléfono debe tener al menos 7 dígitos." }),
+    lat: z.coerce.number(),
+    lng: z.coerce.number(),
 });
 
 
@@ -66,7 +74,7 @@ export default function ConfiguracionPage() {
     
     const pharmacyForm = useForm<z.infer<typeof pharmacyFormSchema>>({
         resolver: zodResolver(pharmacyFormSchema),
-        defaultValues: { name: '', address: '', phone: '' }
+        defaultValues: { name: '', address: '', phone: '', lat: 0, lng: 0 }
     });
 
     const avatarUrl = profileForm.watch('avatarUrl');
@@ -115,10 +123,15 @@ export default function ConfiguracionPage() {
     
     useEffect(() => {
         if (pharmacySettings) {
+             const addressValue = (pharmacySettings.lat && pharmacySettings.lng) 
+                ? `${pharmacySettings.lat.toFixed(6)}, ${pharmacySettings.lng.toFixed(6)}` 
+                : pharmacySettings.address;
             pharmacyForm.reset({
                 name: pharmacySettings.name,
-                address: pharmacySettings.address,
+                address: addressValue,
                 phone: pharmacySettings.phone,
+                lat: pharmacySettings.lat || 0,
+                lng: pharmacySettings.lng || 0,
             });
         }
     }, [pharmacySettings, pharmacyForm]);
@@ -183,6 +196,14 @@ export default function ConfiguracionPage() {
 
     const openChangeRoleDialog = (user: User) => {
         setSelectedUserForRoleChange(user);
+    };
+
+    const handleLocationChange = (location: { lat: number; lng: number; address: string }) => {
+        const coordsString = `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
+        pharmacyForm.setValue('lat', location.lat);
+        pharmacyForm.setValue('lng', location.lng);
+        pharmacyForm.setValue('address', coordsString);
+        toast({ title: "Ubicación Actualizada", description: `Nuevas coordenadas: ${coordsString}` });
     };
 
     if (isLoading) {
@@ -323,53 +344,68 @@ export default function ConfiguracionPage() {
                         </TabsContent>
 
                         <TabsContent value="farmacia">
-                            <Card>
+                             <Card>
                                 <Form {...pharmacyForm}>
                                     <form onSubmit={pharmacyForm.handleSubmit(onPharmacySubmit)}>
                                         <CardHeader>
                                             <CardTitle>Información de la Farmacia</CardTitle>
-                                            <CardDescription>Datos de la sucursal principal desde donde salen los domicilios.</CardDescription>
+                                            <CardDescription>Arrastra el marcador en el mapa para ajustar la ubicación de partida de los domicilios. La dirección se actualizará automáticamente.</CardDescription>
                                         </CardHeader>
-                                        <CardContent className="space-y-4">
-                                            <FormField
-                                                control={pharmacyForm.control}
-                                                name="name"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Nombre de la Farmacia</FormLabel>
-                                                        <FormControl>
-                                                            <Input {...field} />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                            <FormField
-                                                control={pharmacyForm.control}
-                                                name="address"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Dirección de Partida</FormLabel>
-                                                        <FormControl>
-                                                            <Input {...field} />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                             <FormField
-                                                control={pharmacyForm.control}
-                                                name="phone"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Teléfono de la Farmacia</FormLabel>
-                                                        <FormControl>
-                                                            <Input {...field} />
-                                                        </FormControl>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
+                                        <CardContent>
+                                            <div className="grid md:grid-cols-2 gap-6">
+                                                <div className="space-y-4">
+                                                    <FormField
+                                                        control={pharmacyForm.control}
+                                                        name="name"
+                                                        render={({ field }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Nombre de la Farmacia</FormLabel>
+                                                                <FormControl>
+                                                                    <Input {...field} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={pharmacyForm.control}
+                                                        name="address"
+                                                        render={({ field }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Dirección de Partida (Coordenadas)</FormLabel>
+                                                                <FormControl>
+                                                                    <Input {...field} readOnly placeholder="Mueve el marcador para generar coordenadas" className="bg-muted"/>
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                    <FormField
+                                                        control={pharmacyForm.control}
+                                                        name="phone"
+                                                        render={({ field }) => (
+                                                            <FormItem>
+                                                                <FormLabel>Teléfono de la Farmacia</FormLabel>
+                                                                <FormControl>
+                                                                    <Input {...field} />
+                                                                </FormControl>
+                                                                <FormMessage />
+                                                            </FormItem>
+                                                        )}
+                                                    />
+                                                </div>
+                                                <div className="min-h-[300px] md:min-h-0 md:h-auto rounded-lg border overflow-hidden">
+                                                    {pharmacySettings && (
+                                                        <PharmacyLocationPicker
+                                                            initialLocation={{ 
+                                                                lat: pharmacyForm.watch('lat') || pharmacySettings.lat || 0,
+                                                                lng: pharmacyForm.watch('lng') || pharmacySettings.lng || 0 
+                                                            }}
+                                                            onLocationChange={handleLocationChange}
+                                                        />
+                                                    )}
+                                                </div>
+                                            </div>
                                         </CardContent>
                                         <CardFooter className="border-t px-6 py-4">
                                             <Button type="submit" disabled={pharmacyForm.formState.isSubmitting}>

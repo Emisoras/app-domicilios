@@ -1,8 +1,10 @@
+
 'use server';
 
 import connectDB from '@/lib/mongoose';
 import OrderModel, { type OrderDocument } from '@/models/order-model';
 import ClientModel from '@/models/client-model';
+import UserModel from '@/models/user-model';
 import type { Client } from '@/models/client-model';
 import type { User } from '@/models/user-model';
 import { revalidatePath } from 'next/cache';
@@ -31,6 +33,14 @@ function toPlainObject(doc: any): any {
     if (plain.assignedTo && typeof plain.assignedTo === 'object' && plain.assignedTo._id) {
         plain.assignedTo.id = plain.assignedTo._id.toString();
         delete plain.assignedTo._id;
+
+        // Manually handle currentLocation conversion if it exists
+        if (plain.assignedTo.currentLocation && plain.assignedTo.currentLocation.coordinates) {
+            plain.assignedTo.currentLocation = {
+                lng: plain.assignedTo.currentLocation.coordinates[0],
+                lat: plain.assignedTo.currentLocation.coordinates[1]
+            };
+        }
     }
     
     // Ensure createdAt is a string
@@ -56,7 +66,7 @@ export async function getOrders() {
         return orders.map(toPlainObject);
     } catch (error) {
         console.error('Error fetching orders:', error);
-        throw new Error('Failed to fetch orders.');
+        return [];
     }
 }
 
@@ -75,7 +85,7 @@ export async function getOrdersByDeliveryPerson(userId: string) {
         return orders.map(toPlainObject);
     } catch (error) {
         console.error(`Error fetching orders for user ${userId}:`, error);
-        throw new Error('Failed to fetch assigned orders.');
+        return [];
     }
 }
 
@@ -91,7 +101,7 @@ export async function getOrdersByClientId(clientId: string) {
         return orders.map(toPlainObject);
     } catch (error) {
         console.error(`Error fetching orders for client ${clientId}:`, error);
-        throw new Error('Failed to fetch client orders.');
+        return [];
     }
 }
 
@@ -110,7 +120,7 @@ export async function getDeliveredOrdersByDeliveryPerson(userId: string) {
         return orders.map(toPlainObject);
     } catch (error) {
         console.error(`Error fetching delivered orders for user ${userId}:`, error);
-        throw new Error('Failed to fetch delivered orders.');
+        return [];
     }
 }
 
@@ -131,7 +141,8 @@ const OrderFormSchema = z.object({
   })).min(1, { message: "El pedido debe tener al menos un producto." }),
   total: z.coerce.number().positive({ message: "El total debe ser un número positivo." }),
   paymentMethod: z.enum(['cash', 'transfer']),
-  createdBy: z.string(), // This should be a valid ObjectId string for the User
+  createdBy: z.string(),
+  deliveryNotes: z.string().optional(),
 });
 
 
@@ -142,7 +153,7 @@ export async function createOrder(formData: z.infer<typeof OrderFormSchema>) {
         return { success: false, message: `Datos de pedido inválidos: ${errorMessages}` };
     }
 
-    const { clientName, clientPhone, deliveryLocation, items, total, paymentMethod, createdBy } = validatedFields.data;
+    const { clientName, clientPhone, deliveryLocation, items, total, paymentMethod, createdBy, deliveryNotes } = validatedFields.data;
 
     try {
         await connectDB();
@@ -171,6 +182,7 @@ export async function createOrder(formData: z.infer<typeof OrderFormSchema>) {
             total,
             paymentMethod,
             createdBy,
+            deliveryNotes,
             status: 'pending',
         });
 
@@ -193,7 +205,7 @@ export async function createOrder(formData: z.infer<typeof OrderFormSchema>) {
 
     } catch (error: any) {
         console.error('Error creating order:', error);
-        return { success: false, message: 'No se pudo crear el pedido.' };
+        return { success: false, message: 'No se pudo crear el pedido. Revisa la conexión a la base de datos.' };
     }
 }
 
@@ -203,27 +215,54 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus, as
         await connectDB();
         
         const updatePayload: { status: OrderStatus; assignedTo?: mongoose.Types.ObjectId | null } = { status };
+        let deliveryPersonId = assignedTo?.id;
+
+        const orderBeforeUpdate = await OrderModel.findById(orderId).lean();
+        if (!orderBeforeUpdate) {
+            return { success: false, message: 'Pedido no encontrado.' };
+        }
         
         if (assignedTo) {
             updatePayload.assignedTo = new mongoose.Types.ObjectId(assignedTo.id);
+            // Also update the delivery person's status to 'in_route'
+            await UserModel.findByIdAndUpdate(assignedTo.id, { status: 'in_route' });
         } else if (status === 'pending') {
             updatePayload.assignedTo = null;
         }
 
-        const updatedOrder = await OrderModel.findByIdAndUpdate(orderId, { $set: updatePayload }, { new: true })
+        if (!deliveryPersonId) {
+             deliveryPersonId = orderBeforeUpdate.assignedTo?.toString();
+        }
+
+        const updatedOrderDoc = await OrderModel.findByIdAndUpdate(orderId, { $set: updatePayload }, { new: true });
+
+        if (!updatedOrderDoc) {
+             return { success: false, message: 'No se pudo actualizar el pedido.' };
+        }
+        
+        // --- NEW LOGIC: Check if delivery person should become 'available' ---
+        if ((status === 'delivered' || status === 'cancelled') && deliveryPersonId) {
+            const remainingOrdersCount = await OrderModel.countDocuments({
+                assignedTo: new mongoose.Types.ObjectId(deliveryPersonId),
+                status: { $in: ['in_transit', 'assigned'] }
+            });
+
+            if (remainingOrdersCount === 0) {
+                // This was the last delivery, set person to 'available'
+                await UserModel.findByIdAndUpdate(deliveryPersonId, { status: 'available' });
+            }
+        }
+        // --- END NEW LOGIC ---
+
+        const updatedOrder = await OrderModel.findById(updatedOrderDoc._id)
             .populate<{client: Client}>('client')
             .populate<{createdBy: User}>('createdBy')
             .populate<{assignedTo: User}>('assignedTo');
 
-
-        if (!updatedOrder) {
-            return { success: false, message: 'Pedido no encontrado.' };
-        }
-        
         const plainOrder = toPlainObject(updatedOrder);
-
+        
         // Send notification based on the new status
-        if (status === 'in_transit' || status === 'assigned') {
+        if (status === 'assigned') { // Only send notification on first assignment
             await sendWhatsAppNotification(plainOrder.client.phone, 'in_transit', plainOrder);
         } else if (status === 'delivered') {
             await sendWhatsAppNotification(plainOrder.client.phone, 'delivered', plainOrder);
@@ -235,12 +274,13 @@ export async function updateOrderStatus(orderId: string, status: OrderStatus, as
         revalidatePath('/dashboard/mis-rutas');
         revalidatePath('/dashboard/cuadre-caja');
         revalidatePath('/dashboard');
+        revalidatePath('/dashboard/domiciliarios');
         
         return { success: true, message: `Estado del pedido actualizado a ${status}.`, order: plainOrder };
 
     } catch (error) {
         console.error('Error updating order status:', error);
-        return { success: false, message: 'No se pudo actualizar el estado del pedido.' };
+        return { success: false, message: 'No se pudo actualizar el estado del pedido. Revisa la conexión a la base de datos.' };
     }
 }
 
@@ -360,3 +400,8 @@ export async function getCashReconciliationData(date: Date, user?: User) {
         return [];
     }
 }
+
+    
+    
+
+    

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -30,12 +31,14 @@ const AddressMapPicker = dynamic(() => import('./address-map-picker'), {
 const formSchema = z.object({
     clientName: z.string().min(3, { message: "El nombre debe tener al menos 3 caracteres." }),
     clientPhone: z.string().regex(/^\d{10}$/, { message: "El teléfono debe tener 10 dígitos." }),
-    clientAddress: z.string().min(5, { message: "La dirección es obligatoria." }),
+    addressReference: z.string().min(5, { message: "La dirección de referencia es obligatoria." }),
+    coordinates: z.string().optional(),
     orderDetails: z.string().min(5, { message: "Los detalles del pedido son obligatorios." }),
     total: z.coerce.number().positive({ message: "El total debe ser un número positivo." }),
     paymentMethod: z.enum(['cash', 'transfer'], {
         required_error: "Debes seleccionar un método de pago.",
     }),
+    paymentAmount: z.coerce.number().optional(),
 });
 
 interface CreateOrderDialogProps {
@@ -58,33 +61,50 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
         defaultValues: {
             clientName: "",
             clientPhone: "",
-            clientAddress: "",
+            addressReference: "",
+            coordinates: "",
             orderDetails: "",
             total: 0,
             paymentMethod: "cash",
+            paymentAmount: 0,
         },
     });
+
+    const paymentMethod = form.watch('paymentMethod');
+    const total = form.watch('total');
+    const paymentAmount = form.watch('paymentAmount');
+
+    const change = (paymentAmount || 0) - total;
+
+    useEffect(() => {
+        if (location) {
+            form.setValue('coordinates', `${location.lat?.toFixed(6)}, ${location.lng?.toFixed(6)}`);
+        } else {
+            form.setValue('coordinates', '');
+        }
+    }, [location, form]);
+
 
     const handleSelectClient = (clientId: string) => {
         const client = clients.find(c => c.id === clientId);
         if (client) {
             form.setValue('clientName', client.fullName);
             form.setValue('clientPhone', client.phone);
-            // If the client has addresses, use the first one by default
             if (client.addresses && client.addresses.length > 0) {
                 const firstAddress = client.addresses[0];
-                form.setValue('clientAddress', firstAddress.address);
+                form.setValue('addressReference', firstAddress.address);
                 if(firstAddress.lat && firstAddress.lng) {
                     setLocation(firstAddress);
+                    form.setValue('coordinates', `${firstAddress.lat.toFixed(6)}, ${firstAddress.lng.toFixed(6)}`);
                 }
             }
         }
     };
 
     const handleLocateAddress = async () => {
-        const address = form.getValues("clientAddress");
+        const address = form.getValues("addressReference");
         if (!address) {
-            form.setError("clientAddress", { type: "manual", message: "Por favor, ingresa una dirección." });
+            form.setError("addressReference", { type: "manual", message: "Por favor, ingresa una dirección." });
             return;
         }
 
@@ -110,14 +130,12 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
     };
     
     const handleLocationChange = async (newCoords: { lat: number; lng: number }) => {
-        // Optimistically update location for map responsiveness
-        setLocation(prev => prev ? { ...prev, ...newCoords } : { address: form.getValues("clientAddress"), ...newCoords });
+        setLocation(prev => prev ? { ...prev, ...newCoords } : { address: form.getValues("addressReference"), ...newCoords });
         
         setIsReverseGeocoding(true);
         try {
             const { address } = await reverseGeocode(newCoords);
-            form.setValue("clientAddress", address, { shouldValidate: true });
-            // Update the address in the location state as well
+            form.setValue('addressReference', address);
             setLocation(prev => prev ? { ...prev, address } : { address, ...newCoords });
         } catch (error: any) {
             console.error("Reverse geocoding failed", error);
@@ -143,7 +161,6 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
 
         setIsSubmitting(true);
         
-        // Simple transformation of orderDetails string. In a real app, this would be a proper form for items.
         const items = [{
             id: `prod-new-${Date.now()}`,
             name: values.orderDetails.split(',')[0].trim() || 'Producto',
@@ -151,14 +168,19 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
             price: values.total
         }];
 
+        const deliveryNotes = values.paymentMethod === 'cash' 
+            ? `Paga con: ${values.paymentAmount?.toLocaleString('es-CO', { style: 'currency', currency: 'COP' })}. Vueltos: ${((values.paymentAmount || 0) - values.total).toLocaleString('es-CO', { style: 'currency', currency: 'COP' })}`
+            : '';
+
         const result = await createOrder({
             clientName: values.clientName,
             clientPhone: values.clientPhone,
-            deliveryLocation: { ...location, address: values.clientAddress }, // Use address from form
+            deliveryLocation: { ...location, address: values.addressReference },
             items: items,
             total: values.total,
             paymentMethod: values.paymentMethod,
-            createdBy: agent.id
+            createdBy: agent.id,
+            deliveryNotes: deliveryNotes
         });
 
         if (result.success && result.order) {
@@ -179,7 +201,6 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
         setIsSubmitting(false);
     }
     
-    // Reset location state when dialog is closed
     const handleOpenChange = (isOpen: boolean) => {
       if (!isOpen) {
         setLocation(null);
@@ -246,26 +267,39 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
                                 />
                                 <FormField
                                     control={form.control}
-                                    name="clientAddress"
+                                    name="addressReference"
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>Dirección</FormLabel>
+                                            <FormLabel>Dirección de Referencia</FormLabel>
                                             <div className="flex gap-2">
                                                 <FormControl>
-                                                    <div className="relative w-full">
-                                                        <Input placeholder="Escribe la dirección, ej: Calle 11 # 13-50" {...field} />
-                                                        {isReverseGeocoding && (
-                                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                                                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                     <Input placeholder="Escribe la dirección, ej: Calle 11 # 13-50" {...field} />
                                                 </FormControl>
                                                 <Button type="button" variant="secondary" onClick={handleLocateAddress} disabled={isLocating || isReverseGeocoding}>
                                                     {isLocating ? <Loader2 className="animate-spin" /> : <MapPin />}
                                                     <span className="sr-only">Ubicar en mapa</span>
                                                 </Button>
                                             </div>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                 <FormField
+                                    control={form.control}
+                                    name="coordinates"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Coordenadas</FormLabel>
+                                            <FormControl>
+                                                <div className="relative w-full">
+                                                    <Input placeholder="Se generarán con el mapa" {...field} readOnly className="bg-muted"/>
+                                                    {isReverseGeocoding && (
+                                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )}
@@ -283,7 +317,8 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
                                         </FormItem>
                                     )}
                                 />
-                                 <FormField
+                                <div className="grid grid-cols-2 gap-4">
+                                <FormField
                                     control={form.control}
                                     name="total"
                                     render={({ field }) => (
@@ -306,7 +341,7 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
                                                 <RadioGroup
                                                     onValueChange={field.onChange}
                                                     defaultValue={field.value}
-                                                    className="flex gap-4"
+                                                    className="flex pt-2 gap-4"
                                                 >
                                                     <FormItem className="flex items-center space-x-2 space-y-0">
                                                         <FormControl>
@@ -330,6 +365,33 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
                                         </FormItem>
                                     )}
                                 />
+                                </div>
+                                {paymentMethod === 'cash' && (
+                                    <div className="grid grid-cols-2 gap-4 p-4 border rounded-lg bg-muted/50">
+                                        <FormField
+                                            control={form.control}
+                                            name="paymentAmount"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel>Paga con</FormLabel>
+                                                    <FormControl>
+                                                        <Input type="number" placeholder="50000" {...field} />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                        <FormItem>
+                                            <FormLabel>Vueltos</FormLabel>
+                                            <Input 
+                                                readOnly 
+                                                disabled 
+                                                value={change > 0 ? change.toLocaleString('es-CO', { style: 'currency', currency: 'COP' }) : '$0'}
+                                                className="font-bold text-lg"
+                                            />
+                                        </FormItem>
+                                    </div>
+                                )}
                              </div>
                              <div className="h-96 md:min-h-[500px] rounded-lg overflow-hidden border">
                                 <AddressMapPicker 
@@ -352,3 +414,5 @@ export function CreateOrderDialog({ open, onOpenChange, agent, clients, pharmacy
         </Dialog>
     );
 }
+
+    

@@ -1,6 +1,6 @@
 'use server';
 /**
- * @fileOverview A flow for geocoding addresses using Google Maps API.
+ * @fileOverview A flow for geocoding addresses using OpenRouteService API.
  *
  * - geocodeAddress - A function that converts a street address into geographic coordinates.
  * - GeocodeAddressInput - The input type for the geocodeAddress function.
@@ -8,7 +8,6 @@
  */
 
 import { z } from 'zod';
-import { Client, GeocodeResponse, Status } from "@googlemaps/google-maps-services-js";
 
 const GeocodeAddressInputSchema = z.object({
   address: z.string().describe('The full street address to geocode, e.g., "Carrera 15 # 100-50, Bogotá, Colombia".'),
@@ -21,34 +20,50 @@ const GeocodeAddressOutputSchema = z.object({
 });
 export type GeocodeAddressOutput = z.infer<typeof GeocodeAddressOutputSchema>;
 
-const googleMapsClient = new Client({});
-
 export async function geocodeAddress(input: GeocodeAddressInput): Promise<GeocodeAddressOutput> {
-  if (!process.env.GOOGLE_MAPS_API_KEY) {
-     throw new Error("Google Maps API key is not configured.");
+  const apiKey = process.env.OPENROUTESERVICE_API_KEY;
+  if (!apiKey || apiKey === 'tu_clave_de_api') {
+    throw new Error("OpenRouteService API key is not configured in .env file.");
   }
 
-  try {
-    const response: GeocodeResponse = await googleMapsClient.geocode({
-      params: {
-        address: input.address,
-        key: process.env.GOOGLE_MAPS_API_KEY,
-      },
-    });
+  const url = new URL('https://api.openrouteservice.org/geocode/search');
+  url.searchParams.append('text', input.address);
+  // Focus search around Ocaña to improve results
+  url.searchParams.append('focus.point.lon', '-73.358425'); 
+  url.searchParams.append('focus.point.lat', '8.250876');
+  // Add a boundary to limit the search area to roughly the region of Ocaña
+  url.searchParams.append('boundary.country', 'COL');
+  url.searchParams.append('layers', 'address,street');
 
-    if (response.data.status === Status.OK && response.data.results.length > 0) {
-      const location = response.data.results[0].geometry.location;
-      return {
-        lat: location.lat,
-        lng: location.lng,
-      };
+
+  try {
+    const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+            'Authorization': apiKey,
+            'Content-Type': 'application/json'
+        }
+    });
+    
+    if (response.status === 403) {
+      throw new Error("OpenRouteService API error: Forbidden. Check if the API key is valid or has enough credits.");
+    }
+    
+    const data = await response.json();
+
+    if (!response.ok) {
+      const errorDetails = data?.error?.message || response.statusText;
+      throw new Error(`OpenRouteService API error: ${errorDetails}`);
+    }
+
+    if (data.features && data.features.length > 0) {
+      const [lng, lat] = data.features[0].geometry.coordinates;
+      return { lat, lng };
     } else {
-      console.error('Geocoding failed:', response.data.status, response.data.error_message);
-      throw new Error(`Geocoding failed for address: ${input.address}. Status: ${response.data.status}`);
+      throw new Error(`Geocoding failed for address: ${input.address}. No results found.`);
     }
   } catch (error: any) {
-    console.error("Error during geocoding request:", error);
-    const errorMessage = error?.response?.data?.error_message || error.message || "An unknown error occurred.";
-    throw new Error(`Geocoding failed: ${errorMessage}`);
+    console.error("Error during OpenRouteService geocoding request:", error);
+    throw new Error(`Geocoding failed: ${error.message}`);
   }
 }

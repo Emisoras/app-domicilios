@@ -1,10 +1,11 @@
+
 'use server';
 
 import connectDB from '@/lib/mongoose';
 import UserModel, { UserDocument } from '@/models/user-model';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import type { Role } from '@/types';
+import type { Role, DeliveryStatus } from '@/types';
 import bcrypt from 'bcryptjs';
 
 // Schema for creating a user (password is required)
@@ -32,6 +33,15 @@ function toPlainObject(doc: UserDocument | null): any {
     const plain = doc.toObject({ getters: true, versionKey: false });
     plain.id = plain._id.toString();
     delete plain._id;
+
+    // Manually handle currentLocation conversion if it exists
+    if (plain.currentLocation && plain.currentLocation.coordinates) {
+        plain.currentLocation = {
+            lng: plain.currentLocation.coordinates[0],
+            lat: plain.currentLocation.coordinates[1]
+        };
+    }
+    
     return plain;
 }
 
@@ -66,7 +76,7 @@ export async function loginUser(credentials: { cedula: string, password?: string
 
     } catch (error) {
         console.error('Login error:', error);
-        return { success: false, message: 'Ocurrió un error durante el inicio de sesión.' };
+        return { success: false, message: 'Ocurrió un error durante el inicio de sesión. Revisa la conexión a la base de datos.' };
     }
 }
 
@@ -78,7 +88,8 @@ export async function getUsers(role: Role) {
     return users.map(toPlainObject);
   } catch (error) {
     console.error(`Error fetching users with role ${role}:`, error);
-    throw new Error('Failed to fetch users.');
+    // Return empty array on DB connection error to prevent crash
+    return [];
   }
 }
 
@@ -89,7 +100,8 @@ export async function getAllUsers() {
     return users.map(toPlainObject);
   } catch (error) {
     console.error(`Error fetching all users:`, error);
-    throw new Error('Failed to fetch all users.');
+     // Return empty array on DB connection error to prevent crash
+    return [];
   }
 }
 
@@ -123,20 +135,20 @@ export async function createUser(formData: z.infer<typeof UserCreateSchema>) {
     }
     
     const { name, phone, cedula, password, role } = validatedFields.data;
-
-    await connectDB();
-
-    const existingUser = await UserModel.findOne({ $or: [{ cedula }, { phone }] });
-    if (existingUser) {
-        if (existingUser.cedula === cedula) {
-            return { success: false, message: 'Ya existe un usuario con esta cédula.' };
-        }
-        if (existingUser.phone === phone) {
-            return { success: false, message: 'Ya existe un usuario con este número de teléfono.' };
-        }
-    }
-
+    
     try {
+        await connectDB();
+
+        const existingUser = await UserModel.findOne({ $or: [{ cedula }, { phone }] });
+        if (existingUser) {
+            if (existingUser.cedula === cedula) {
+                return { success: false, message: 'Ya existe un usuario con esta cédula.' };
+            }
+            if (existingUser.phone === phone) {
+                return { success: false, message: 'Ya existe un usuario con este número de teléfono.' };
+            }
+        }
+
         const hashedPassword = await bcrypt.hash(password, 10);
 
         const newUser = new UserModel({
@@ -145,7 +157,7 @@ export async function createUser(formData: z.infer<typeof UserCreateSchema>) {
             cedula,
             password: hashedPassword,
             role: role,
-            status: role === 'delivery' ? 'available' : 'offline',
+            status: role === 'delivery' ? 'offline' : 'offline', // Start as offline
         });
 
         await newUser.save();
@@ -206,6 +218,7 @@ export async function updateUser(id: string, formData: z.infer<typeof UserUpdate
         revalidatePath('/dashboard/domiciliarios');
         revalidatePath('/dashboard/configuracion');
         revalidatePath('/dashboard');
+        revalidatePath('/dashboard/cuadre-caja');
 
         return { success: true, message: 'Usuario actualizado exitosamente.', user: plainUser };
 
@@ -240,6 +253,16 @@ export async function deleteUser(id: string) {
 export async function updateUserLocation(userId: string, location: { lat: number, lng: number, bearing: number }) {
     try {
         await connectDB();
+        
+        // Find the user to check their current status
+        const user = await UserModel.findById(userId);
+        if (!user) return { success: false, message: 'User not found.' };
+
+        // Only update location if the user is in_route. This prevents race conditions.
+        if (user.status !== 'in_route') {
+            return { success: false, message: 'User is not in route.' };
+        }
+
         await UserModel.findByIdAndUpdate(userId, {
             $set: {
                 currentLocation: {
@@ -247,10 +270,11 @@ export async function updateUserLocation(userId: string, location: { lat: number
                     coordinates: [location.lng, location.lat],
                 },
                 bearing: location.bearing,
-                status: 'in_route', // Automatically set status to in_route when location is updated
+                status: 'in_route', // Ensure status remains in_route
             }
         });
         revalidatePath('/dashboard');
+        revalidatePath('/dashboard/rutas');
         revalidatePath('/dashboard/domiciliarios');
         return { success: true };
     } catch (error) {
@@ -258,3 +282,36 @@ export async function updateUserLocation(userId: string, location: { lat: number
         return { success: false, message: 'Could not update location.' };
     }
 }
+
+export async function updateUserStatus(userId: string, status: DeliveryStatus) {
+    try {
+        await connectDB();
+        const updatePayload: { status: DeliveryStatus, currentLocation?: any } = { status };
+
+        // When going offline, explicitly unset the location to remove the icon from the map
+        if (status === 'offline') {
+            updatePayload.currentLocation = undefined;
+        }
+
+        const user = await UserModel.findByIdAndUpdate(userId, { $set: updatePayload }, { new: true });
+        
+        if (!user) {
+            return { success: false, message: 'Usuario no encontrado.' };
+        }
+
+        revalidatePath('/dashboard/cuadre-caja');
+        revalidatePath('/dashboard/domiciliarios');
+        revalidatePath('/dashboard');
+        revalidatePath('/dashboard/rutas');
+        
+        return { success: true, user: toPlainObject(user) };
+    } catch (error) {
+        console.error(`Error updating status for user ${userId}:`, error);
+        return { success: false, message: `No se pudo actualizar el estado a ${status}.` };
+    }
+}
+
+
+    
+
+    

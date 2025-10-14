@@ -1,6 +1,5 @@
 
 
-
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -14,8 +13,6 @@ import type { OrderStatus, Order, User } from "@/types";
 import type { RouteInfo } from '@/components/dashboard/map-component';
 import { DashboardMap } from "./components/dashboard-map";
 import { getPharmacySettings } from "@/actions/pharmacy-settings-actions";
-import { geocodeAddress } from "@/ai/flows/geocode-address-flow";
-import { optimizePharmacyRoute } from "@/ai/flows/optimize-pharmacy-route";
 import { getSession } from "@/lib/auth";
 
 const getStatusBadge = (status: OrderStatus) => {
@@ -66,19 +63,12 @@ export default async function DashboardPage() {
     getPharmacySettings(),
   ]);
 
-  let pharmacyLocation = {
+  const pharmacyLocation = {
     address: pharmacySettings.address,
-    lat: 4.60971, // Default to Bogotá if geocoding fails
-    lng: -74.08175,
+    lat: pharmacySettings.lat || 8.250876,
+    lng: pharmacySettings.lng || -73.358425,
   };
-
-  try {
-    const coords = await geocodeAddress({ address: pharmacySettings.address });
-    pharmacyLocation = { ...pharmacyLocation, ...coords };
-  } catch (error) {
-    console.warn("Could not geocode pharmacy address, using default location. Error:", error);
-  }
-
+  
   const pendingOrders = isDeliveryPerson
     ? [] // Delivery people don't see unassigned orders
     : allOrders
@@ -93,52 +83,26 @@ export default async function DashboardPage() {
       assignedRoutes = myRoute ? { [currentUser.id]: myRoute } : {};
   }
 
-
-  const routesForMapPromises = Object.entries(assignedRoutes)
-    .map(async ([personId, orders], index) => {
-        // For delivery role, only show their own route. For others, find the person.
+  const routesForMap: RouteInfo[] = Object.entries(assignedRoutes)
+    .map(([personId, orders], index) => {
         const deliveryPerson = isDeliveryPerson
             ? currentUser
             : deliveryPeople.find(p => p.id === personId);
 
-        if (!deliveryPerson || orders.length === 0) return null;
+        if (!deliveryPerson) return null;
 
-        try {
-            const optimizationResult = await optimizePharmacyRoute({
-                startAddress: pharmacyLocation.address,
-                orders: orders.map(o => ({ orderId: o.id, address: o.deliveryLocation.address })),
-            });
+        // Simple reordering by creation date as a stable sort
+        const reorderedOrders = orders.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
             
-            // Reorder the orders array based on the optimized route
-            const reorderedOrders = optimizationResult.optimizedRoute.map(stop => {
-                return orders.find(o => o.id === stop.orderId)!;
-            }).filter(Boolean);
-
-            return {
-                deliveryPerson,
-                orders: reorderedOrders,
-                color: ROUTE_COLORS[index % ROUTE_COLORS.length],
-                currentLocation: deliveryPerson.currentLocation,
-                bearing: deliveryPerson.bearing,
-                optimizedPolyline: optimizationResult.encodedPolyline,
-            };
-        } catch (error) {
-            console.error(`Could not optimize route for ${deliveryPerson.name}:`, error);
-            // Fallback to showing the route without an optimized polyline but with original order
-             return {
-                deliveryPerson,
-                orders,
-                color: ROUTE_COLORS[index % ROUTE_COLORS.length],
-                currentLocation: deliveryPerson.currentLocation,
-                bearing: deliveryPerson.bearing,
-                optimizedPolyline: null,
-            };
-        }
-    });
-
-  const routesForMap = (await Promise.all(routesForMapPromises))
+        return {
+            deliveryPerson,
+            orders: reorderedOrders,
+            color: ROUTE_COLORS[index % ROUTE_COLORS.length],
+            currentLocation: deliveryPerson.currentLocation,
+            bearing: deliveryPerson.bearing,
+        };
+    })
     .filter((r): r is RouteInfo => r !== null);
-
 
   return (
     <div className="flex flex-col gap-8">
@@ -266,4 +230,3 @@ export default async function DashboardPage() {
     </div>
   );
 }
-

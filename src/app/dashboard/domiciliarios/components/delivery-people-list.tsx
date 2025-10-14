@@ -1,7 +1,9 @@
+
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { User, DeliveryStatus } from '@/types';
+import { getUsers } from '@/actions/user-actions';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -14,6 +16,7 @@ import { DeliveryPersonHistoryDialog } from './delivery-person-history-dialog';
 import { deleteUser } from '@/actions/user-actions';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Skeleton } from '@/components/ui/skeleton';
 
 const statusConfig: Record<DeliveryStatus, { text: string, variant: BadgeProps['variant'] }> = {
     available: { text: "Disponible", variant: 'success' },
@@ -33,15 +36,30 @@ interface DeliveryPeopleListProps {
 }
 
 export function DeliveryPeopleList({ initialDeliveryPeople, currentUser }: DeliveryPeopleListProps) {
+    const [deliveryPeople, setDeliveryPeople] = useState<User[]>(initialDeliveryPeople);
+    const [isLoading, setIsLoading] = useState(false);
     const [isCreateDialogOpen, setCreateDialogOpen] = useState(false);
     const [editingPerson, setEditingPerson] = useState<User | null>(null);
     const [viewingHistory, setViewingHistory] = useState<User | null>(null);
     const { toast } = useToast();
 
+    useEffect(() => {
+        const fetchDeliveryPeople = async () => {
+            // No need to set loading for background refreshes
+            const freshData = await getUsers('delivery');
+            setDeliveryPeople(freshData);
+        };
+
+        const intervalId = setInterval(fetchDeliveryPeople, 10000); // Refresh every 10 seconds
+
+        return () => clearInterval(intervalId); // Cleanup interval on component unmount
+    }, []);
+
     const handleDelete = async (userId: string) => {
         const result = await deleteUser(userId);
         if (result.success) {
             toast({ title: "Domiciliario Eliminado", description: result.message });
+            setDeliveryPeople(prev => prev.filter(p => p.id !== userId));
         } else {
             toast({ variant: 'destructive', title: "Error", description: result.message });
         }
@@ -57,6 +75,13 @@ export function DeliveryPeopleList({ initialDeliveryPeople, currentUser }: Deliv
                     </Button>
                 )}
             </div>
+             {isLoading ? (
+                <div className="space-y-2">
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                    <Skeleton className="h-12 w-full" />
+                </div>
+            ) : (
             <Table>
                 <TableHeader>
                     <TableRow>
@@ -71,7 +96,7 @@ export function DeliveryPeopleList({ initialDeliveryPeople, currentUser }: Deliv
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    {initialDeliveryPeople.map((domiciliario) => (
+                    {deliveryPeople.map((domiciliario) => (
                         <TableRow key={domiciliario.id}>
                                 <TableCell>
                                 <Avatar>
@@ -124,9 +149,13 @@ export function DeliveryPeopleList({ initialDeliveryPeople, currentUser }: Deliv
                     ))}
                 </TableBody>
             </Table>
+            )}
             <CreateDeliveryPersonDialog 
                 open={isCreateDialogOpen}
-                onOpenChange={setCreateDialogOpen}
+                onOpenChange={(open) => {
+                    if (!open) setCreateDialogOpen(false);
+                    else setCreateDialogOpen(true);
+                }}
             />
             <EditDeliveryPersonDialog
                 open={!!editingPerson}
@@ -141,3 +170,5 @@ export function DeliveryPeopleList({ initialDeliveryPeople, currentUser }: Deliv
         </>
     );
 }
+
+    

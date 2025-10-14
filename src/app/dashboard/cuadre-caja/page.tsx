@@ -1,14 +1,15 @@
+
 'use client';
 
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Smartphone, HandCoins, Users, PackageCheck, LogIn, LogOut, CalendarIcon, Loader2 } from "lucide-react";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Smartphone, HandCoins, Users, PackageCheck, LogIn, LogOut, CalendarIcon, Loader2, Wifi, WifiOff } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { getCashReconciliationData } from "@/actions/order-actions";
-import { getUserById } from "@/actions/user-actions";
-import type { Order, User } from '@/types';
+import { getUserById, updateUserStatus } from "@/actions/user-actions";
+import type { Order, User, DeliveryStatus } from '@/types';
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -16,6 +17,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { es } from 'date-fns/locale';
+import { useToast } from "@/hooks/use-toast";
 
 // --- Reusable Components ---
 const formatCurrency = (amount: number) => amount.toLocaleString('es-CO', { style: 'currency', currency: 'COP' });
@@ -82,6 +84,8 @@ export default function CuadreCajaPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [date, setDate] = useState<Date>(new Date());
     const [isLoading, setIsLoading] = useState(true);
+    const [isStatusUpdating, setIsStatusUpdating] = useState(false);
+    const { toast } = useToast();
 
     useEffect(() => {
         async function fetchInitialData() {
@@ -112,6 +116,28 @@ export default function CuadreCajaPage() {
 
         fetchDataForDate();
     }, [date, currentUser]);
+
+    const handleStatusChange = async (newStatus: DeliveryStatus) => {
+        if (!currentUser) return;
+
+        setIsStatusUpdating(true);
+        const result = await updateUserStatus(currentUser.id, newStatus);
+        
+        if (result.success && result.user) {
+            setCurrentUser(result.user);
+            toast({
+                title: "Estado Actualizado",
+                description: `Ahora estás ${newStatus === 'offline' ? 'desconectado' : 'disponible'}.`,
+            });
+        } else {
+            toast({
+                variant: "destructive",
+                title: "Error",
+                description: result.message,
+            });
+        }
+        setIsStatusUpdating(false);
+    };
 
     if (!currentUser && !isLoading) {
         return <div className="p-8 text-center text-muted-foreground">Inicia sesión para ver esta página.</div>;
@@ -206,17 +232,42 @@ export default function CuadreCajaPage() {
         const totalTransfer = orders.filter(o => o.paymentMethod === 'transfer').reduce((sum, o) => sum + o.total, 0);
         const totalOrders = orders.length;
         const totalCollected = totalCash + totalTransfer;
+        
+        const isOffline = currentUser?.status === 'offline';
 
         return (
             <div className="flex flex-col gap-8">
                 <div className="flex justify-between items-start">
                     <div>
                         <h1 className="text-3xl font-bold font-headline">Mi Cuadre de Caja</h1>
-                        <p className="text-muted-foreground">Resumen de tu turno, {currentUser?.name}.</p>
+                        <div className="text-muted-foreground flex items-center gap-2">
+                           Resumen de tu turno, {currentUser?.name}.
+                           <Badge variant={isOffline ? 'destructive' : 'success'}>
+                            {isOffline ? <WifiOff className="mr-1 h-3 w-3" /> : <Wifi className="mr-1 h-3 w-3" />}
+                            {isOffline ? 'Desconectado' : 'Disponible'}
+                           </Badge>
+                        </div>
                     </div>
                     <div className="flex gap-2">
-                        <Button variant="outline"><LogIn className="mr-2" /> Abrir Turno</Button>
-                        <Button variant="destructive"><LogOut className="mr-2" /> Cerrar Turno</Button>
+                        {isOffline ? (
+                            <Button 
+                                variant="outline" 
+                                onClick={() => handleStatusChange('available')} 
+                                disabled={isStatusUpdating}
+                            >
+                                {isStatusUpdating ? <Loader2 className="mr-2 animate-spin" /> : <LogIn className="mr-2" />}
+                                Abrir Turno
+                            </Button>
+                        ) : (
+                             <Button 
+                                variant="destructive" 
+                                onClick={() => handleStatusChange('offline')} 
+                                disabled={isStatusUpdating}
+                            >
+                                {isStatusUpdating ? <Loader2 className="mr-2 animate-spin" /> : <LogOut className="mr-2" />}
+                                Cerrar Turno
+                            </Button>
+                        )}
                     </div>
                 </div>
                 <Card>
@@ -278,3 +329,5 @@ export default function CuadreCajaPage() {
         </div>
     )
 }
+
+    

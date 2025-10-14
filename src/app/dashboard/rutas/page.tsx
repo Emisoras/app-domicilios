@@ -1,11 +1,16 @@
+
+
 import { getOrders } from "@/actions/order-actions";
 import { getUsers, getUserById } from "@/actions/user-actions";
 import { RoutePlanner } from "./components/route-planner";
 import type { Order } from "@/types";
 import { getClients } from "@/actions/client-actions";
 import { getPharmacySettings } from "@/actions/pharmacy-settings-actions";
-import { geocodeAddress } from "@/ai/flows/geocode-address-flow";
 import { getSession } from "@/lib/auth";
+import type { RouteInfo } from "@/components/dashboard/map-component";
+
+const ROUTE_COLORS = ['hsl(var(--primary))', 'hsl(var(--chart-2))', 'hsl(var(--chart-4))', 'hsl(var(--destructive))', 'hsl(var(--accent))'];
+
 
 const groupOrdersByDeliveryPerson = (orders: Order[]): Record<string, Order[]> => {
     const assignedOrders = orders.filter(o => (o.status === 'in_transit' || o.status === 'assigned') && o.assignedTo);
@@ -16,7 +21,6 @@ const groupOrdersByDeliveryPerson = (orders: Order[]): Record<string, Order[]> =
             acc[personId] = [];
         }
         acc[personId].push(order);
-        // The sorting will happen inside the route planner after optimization
         return acc;
     }, {});
 };
@@ -35,18 +39,11 @@ export default async function RutasPage() {
     return <div>Inicia sesión para ver esta página.</div>;
   }
 
-  let pharmacyLocation = {
+  const pharmacyLocation = {
     address: pharmacySettings.address,
-    lat: 4.60971, // Default to Bogotá if geocoding fails
-    lng: -74.08175,
+    lat: pharmacySettings.lat || 8.250876,
+    lng: pharmacySettings.lng || -73.358425,
   };
-
-  try {
-    const coords = await geocodeAddress({ address: pharmacySettings.address });
-    pharmacyLocation = { ...pharmacyLocation, ...coords };
-  } catch (error) {
-    console.warn("Could not geocode pharmacy address, using default location. Error:", error);
-  }
 
   const pendingOrders = allOrders
     .filter(o => o.status === 'pending')
@@ -54,15 +51,33 @@ export default async function RutasPage() {
     
   const assignedRoutes = groupOrdersByDeliveryPerson(allOrders);
 
+  const routesForMap: RouteInfo[] = Object.entries(assignedRoutes)
+    .map(([personId, orders], index) => {
+        const deliveryPerson = deliveryPeople.find(p => p.id === personId);
+
+        if (!deliveryPerson) return null;
+        
+        const reorderedOrders = orders.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            
+        return {
+            deliveryPerson,
+            orders: reorderedOrders,
+            color: ROUTE_COLORS[index % ROUTE_COLORS.length],
+            currentLocation: deliveryPerson.currentLocation,
+            bearing: deliveryPerson.bearing,
+        };
+    })
+    .filter((r): r is RouteInfo => r !== null);
+
+
   return (
     <RoutePlanner 
       initialPendingOrders={pendingOrders}
-      initialAssignedRoutes={assignedRoutes}
+      initialRoutesForMap={routesForMap}
       deliveryPeople={deliveryPeople}
       clients={clients}
       agent={agentUser}
-      pharmacyAddress={{ address: pharmacySettings.address, lat: pharmacyLocation.lat, lng: pharmacyLocation.lng }}
-      pharmacyLocation={pharmacyLocation}
+      pharmacyLocation={{ lat: pharmacyLocation.lat, lng: pharmacyLocation.lng }}
     />
   );
 }

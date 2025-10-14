@@ -1,3 +1,4 @@
+
 export type Role = 'admin' | 'agent' | 'delivery';
 export type DeliveryStatus = 'available' | 'in_route' | 'offline';
 

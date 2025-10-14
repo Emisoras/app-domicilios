@@ -42,6 +42,23 @@ const createRoutePointIcon = (number: number, bgColor: string = 'hsl(var(--prima
     });
 };
 
+const createPharmacyIcon = () => {
+    const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 24 24" fill="hsl(var(--primary))" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0px 4px 4px rgba(0,0,0,0.4));">
+        <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 9.8C20 17.5 12 22 12 22Z" />
+        <path d="M14 10h-4v4h4v-4Z"/>
+        <path d="M10 10V8a2 2 0 1 1 4 0v2"/>
+    </svg>
+    `;
+    return new L.DivIcon({
+        html: svg,
+        className: 'bg-transparent border-none',
+        iconSize: [38, 38],
+        iconAnchor: [19, 38],
+    });
+};
+
+
 const createPendingIcon = () => {
     const style = `
       background-color: hsl(var(--muted-foreground));
@@ -86,7 +103,6 @@ export interface RouteInfo {
     color: string;
     currentLocation?: { lat: number, lng: number };
     bearing?: number;
-    optimizedPolyline?: string | null;
 }
 
 interface MapComponentProps {
@@ -94,47 +110,15 @@ interface MapComponentProps {
     routes: RouteInfo[];
     pendingOrders: Order[];
     className?: string;
-    optimizedPolyline?: string | null; // For pending orders optimization
+    optimizedPolyline?: string | null;
 }
-
-// Decode polyline utility
-const decodePolyline = (encoded: string): L.LatLngExpression[] => {
-    let points: L.LatLngExpression[] = [];
-    let index = 0, len = encoded.length;
-    let lat = 0, lng = 0;
-
-    while (index < len) {
-        let b, shift = 0, result = 0;
-        do {
-            b = encoded.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-        } while (b >= 0x20);
-        let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-        lat += dlat;
-
-        shift = 0;
-        result = 0;
-        do {
-            b = encoded.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-        } while (b >= 0x20);
-        let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-        lng += dlng;
-
-        points.push([lat / 1e5, lng / 1e5]);
-    }
-    return points;
-};
-
 
 const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, optimizedPolyline }: MapComponentProps) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<LeafletMap | null>(null);
     const markersRef = useRef<LayerGroup>(new L.LayerGroup());
-    const polylinesRef = useRef<LayerGroup>(new L.LayerGroup());
     const motorcycleMarkersRef = useRef<Record<string, LeafletMarker>>({});
+    const polylineRef = useRef<L.Polyline | null>(null);
     const { toast } = useToast();
 
     useEffect(() => {
@@ -148,7 +132,6 @@ const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, opti
             }).addTo(map);
 
             markersRef.current.addTo(map);
-            polylinesRef.current.addTo(map);
             mapRef.current = map;
         }
 
@@ -165,48 +148,25 @@ const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, opti
 
         const map = mapRef.current;
         markersRef.current.clearLayers();
-        polylinesRef.current.clearLayers();
 
         const allMarkersBounds: L.LatLng[] = [];
 
-        // Pharmacy Marker (using default Leaflet icon)
-        const pharmacyMarker = L.marker([pharmacyLocation.lat, pharmacyLocation.lng])
+        // Pharmacy Marker
+        const pharmacyMarker = L.marker([pharmacyLocation.lat, pharmacyLocation.lng], { icon: createPharmacyIcon(), zIndexOffset: 2000 })
             .bindPopup(`<b>Droguería Avenida (Punto de Partida)</b><br />${pharmacyLocation.address}`);
         markersRef.current.addLayer(pharmacyMarker);
         allMarkersBounds.push(pharmacyMarker.getLatLng());
         
-        // Draw the optimized route for PENDING orders if a polyline is provided
-        if (optimizedPolyline) {
-            try {
-                const decodedPath = decodePolyline(optimizedPolyline);
-                const polyline = L.polyline(decodedPath, { color: 'hsl(var(--primary))', weight: 5, opacity: 0.7 });
-                polylinesRef.current.addLayer(polyline);
-
-                pendingOrders.forEach((order, index) => {
-                     if (order.deliveryLocation.lat && order.deliveryLocation.lng) {
-                        const position: L.LatLngExpression = [order.deliveryLocation.lat, order.deliveryLocation.lng];
-                        allMarkersBounds.push(L.latLng(position as L.LatLngTuple));
-                        const marker = L.marker(position, { icon: createRoutePointIcon(index + 1, 'hsl(var(--primary))') })
-                            .bindPopup(`<b>Ruta Optimizada</b><br/>#${index + 1} - Pedido de ${order.client.fullName}<br />${order.deliveryLocation.address}`);
-                        markersRef.current.addLayer(marker);
-                     }
-                });
-            } catch (e) {
-                console.error("Failed to decode optimized polyline:", e);
-            }
-
-        } else {
-             // Draw pending orders (not optimized) as individual gray markers
-            pendingOrders.forEach(order => {
-                 if (order.deliveryLocation.lat && order.deliveryLocation.lng) {
-                    const position: L.LatLngExpression = [order.deliveryLocation.lat, order.deliveryLocation.lng];
-                    allMarkersBounds.push(L.latLng(position as L.LatLngTuple));
-                    const marker = L.marker(position, { icon: createPendingIcon() })
-                        .bindPopup(`<b>Pedido Pendiente</b><br />Cliente: ${order.client.fullName}<br />Dirección: ${order.deliveryLocation.address}`);
-                    markersRef.current.addLayer(marker);
-                 }
-            });
-        }
+        // Draw pending orders as individual gray markers
+        pendingOrders.forEach(order => {
+             if (order.deliveryLocation.lat && order.deliveryLocation.lng) {
+                const position: L.LatLngExpression = [order.deliveryLocation.lat, order.deliveryLocation.lng];
+                allMarkersBounds.push(L.latLng(position as L.LatLngTuple));
+                const marker = L.marker(position, { icon: createPendingIcon() })
+                    .bindPopup(`<b>Pedido Pendiente</b><br />Cliente: ${order.client.fullName}<br />Dirección: ${order.deliveryLocation.address}`);
+                markersRef.current.addLayer(marker);
+             }
+        });
         
         // --- Manage motorcycle markers for assigned routes ---
         const currentMotorcycleIds = new Set(routes.map(r => r.deliveryPerson.id));
@@ -220,39 +180,7 @@ const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, opti
         });
 
         routes.forEach(route => {
-            if (route.optimizedPolyline) {
-                try {
-                    const decodedPath = decodePolyline(route.optimizedPolyline);
-                    const polyline = L.polyline(decodedPath, { color: route.color, weight: 5, opacity: 0.7 });
-                    polylinesRef.current.addLayer(polyline);
-                } catch(e) {
-                    console.error("Failed to decode assigned route polyline:", e);
-                }
-            }
-
-            const personId = route.deliveryPerson.id;
-            const hasValidCurrentLocation = route.currentLocation && typeof route.currentLocation.lat === 'number' && typeof route.currentLocation.lng === 'number';
-            const location = hasValidCurrentLocation ? route.currentLocation! : { lat: pharmacyLocation.lat, lng: pharmacyLocation.lng };
-
-            if (typeof location.lat !== 'number' || typeof location.lng !== 'number') {
-                return; // Skip this motorcycle if location is still invalid
-            }
-
-            const icon = createMotorcycleIcon(route.color, route.bearing);
-
-            if (motorcycleMarkersRef.current[personId]) {
-                motorcycleMarkersRef.current[personId].setLatLng([location.lat, location.lng]);
-                motorcycleMarkersRef.current[personId].setIcon(icon);
-            } else {
-                const motorcycleMarker = L.marker([location.lat, location.lng], {
-                    icon,
-                    zIndexOffset: 1000
-                }).bindPopup(`<b>${route.deliveryPerson.name}</b><br/>${hasValidCurrentLocation ? 'En ruta...' : 'En la droguería'}`);
-                motorcycleMarker.addTo(map);
-                motorcycleMarkersRef.current[personId] = motorcycleMarker;
-            }
-            allMarkersBounds.push(L.latLng(location.lat, location.lng));
-
+            // Draw the order markers for the assigned route
             route.orders.forEach((order, index) => {
                 if (order.deliveryLocation.lat && order.deliveryLocation.lng) {
                     const position: L.LatLngExpression = [order.deliveryLocation.lat, order.deliveryLocation.lng];
@@ -263,14 +191,50 @@ const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, opti
                     markersRef.current.addLayer(marker);
                 }
             });
+            
+            // Draw or update the motorcycle marker
+            const personId = route.deliveryPerson.id;
+            const hasValidCurrentLocation = route.currentLocation && typeof route.currentLocation.lat === 'number' && typeof route.currentLocation.lng === 'number';
+            
+            if (hasValidCurrentLocation) {
+                const location = route.currentLocation!;
+                const icon = createMotorcycleIcon(route.color, route.bearing);
+
+                if (motorcycleMarkersRef.current[personId]) {
+                    motorcycleMarkersRef.current[personId].setLatLng([location.lat, location.lng]);
+                    motorcycleMarkersRef.current[personId].setIcon(icon);
+                } else {
+                    const motorcycleMarker = L.marker([location.lat, location.lng], {
+                        icon,
+                        zIndexOffset: 1000
+                    }).bindPopup(`<b>${route.deliveryPerson.name}</b><br/>En ruta...`);
+                    motorcycleMarker.addTo(map);
+                    motorcycleMarkersRef.current[personId] = motorcycleMarker;
+                }
+                allMarkersBounds.push(L.latLng(location.lat, location.lng));
+            }
         });
         
-        if (allMarkersBounds.length > 1 && map.getBoundsZoom(L.latLngBounds(allMarkersBounds))) {
-            map.fitBounds(L.latLngBounds(allMarkersBounds), { padding: [50, 50] });
-        } else if (allMarkersBounds.length === 1) {
-             map.setView(allMarkersBounds[0], 15);
+         if (optimizedPolyline) {
+            if (polylineRef.current) {
+                polylineRef.current.remove();
+            }
+            // @ts-ignore
+            const decoded = L.Polyline.fromEncoded(optimizedPolyline).getLatLngs();
+            polylineRef.current = L.polyline(decoded, { color: 'hsl(var(--accent))', weight: 5, opacity: 0.8 }).addTo(map);
+            map.fitBounds(polylineRef.current.getBounds(), { padding: [50, 50] });
         } else {
-             map.setView([pharmacyLocation.lat, pharmacyLocation.lng], 13);
+            if (polylineRef.current) {
+                polylineRef.current.remove();
+                polylineRef.current = null;
+            }
+            if (allMarkersBounds.length > 1 && map.getBoundsZoom(L.latLngBounds(allMarkersBounds))) {
+                map.fitBounds(L.latLngBounds(allMarkersBounds), { padding: [50, 50] });
+            } else if (allMarkersBounds.length === 1) {
+                 map.setView(allMarkersBounds[0], 15);
+            } else {
+                 map.setView([pharmacyLocation.lat, pharmacyLocation.lng], 13);
+            }
         }
 
         const allOrdersOnMap = [...routes.flatMap(r => r.orders), ...pendingOrders];
@@ -289,3 +253,5 @@ const MapComponent = ({ pharmacyLocation, routes, pendingOrders, className, opti
 };
 
 export default MapComponent;
+
+    

@@ -25,7 +25,8 @@ export async function getClients() {
     return plainClients;
   } catch (error) {
     console.error('Error fetching clients:', error);
-    throw new Error('Failed to fetch clients.');
+    // Return empty array on DB connection error to prevent crash
+    return [];
   }
 }
 
@@ -51,7 +52,7 @@ export async function createClient(formData: { fullName: string; phone: string; 
     if (error.code === 11000 || error.message.includes('duplicate key')) {
         return { success: false, message: 'Ya existe un cliente con este número de teléfono.' };
     }
-    return { success: false, message: 'No se pudo crear el cliente.' };
+    return { success: false, message: 'No se pudo crear el cliente. Revisa la conexión a la base de datos.' };
   }
 }
 
@@ -71,7 +72,7 @@ export async function updateClient(id: string, formData: { fullName: string; pho
         return { success: true, message: 'Cliente actualizado.' };
     } catch (error) {
         console.error('Error updating client:', error);
-        return { success: false, message: 'No se pudo actualizar el cliente.' };
+        return { success: false, message: 'No se pudo actualizar el cliente. Revisa la conexión a la base de datos.' };
     }
 }
 
@@ -83,6 +84,6 @@ export async function deleteClient(id: string) {
         return { success: true, message: 'Cliente eliminado.' };
     } catch (error) {
         console.error('Error deleting client:', error);
-        return { success: false, message: 'No se pudo eliminar el cliente.' };
+        return { success: false, message: 'No se pudo eliminar el cliente. Revisa la conexión a la base de datos.' };
     }
 }

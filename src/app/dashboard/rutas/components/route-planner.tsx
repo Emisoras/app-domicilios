@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -5,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bot, PlusCircle, Loader2, User as UserIcon } from 'lucide-react';
+import { Bot, PlusCircle, Loader2, User as UserIcon, Map as MapIcon } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import type { Order, User, Client } from '@/types';
 import { OrderCard } from './order-card';
@@ -19,28 +20,30 @@ import { OrderDetailsDialog } from '../../pedidos/components/order-details-dialo
 import { updateOrderStatus } from '@/actions/order-actions';
 
 
-const Map = dynamic(() => import('@/components/dashboard/map-component'), {
+const MapComponent = dynamic(() => import('@/components/dashboard/map-component'), {
   ssr: false,
   loading: () => <Skeleton className="w-full h-full rounded-lg" />
 });
 
-
-const ROUTE_COLORS = ['hsl(var(--primary))', 'hsl(var(--chart-2))', 'hsl(var(--chart-4))', 'hsl(var(--destructive))', 'hsl(var(--accent))'];
-
-
 interface RoutePlannerProps {
   initialPendingOrders: Order[];
-  initialAssignedRoutes: Record<string, Order[]>;
+  initialRoutesForMap: RouteInfo[];
   deliveryPeople: User[];
   clients: Client[];
   agent: User;
-  pharmacyAddress: { address: string; lat: number; lng: number };
   pharmacyLocation: { lat: number, lng: number };
 }
 
-export function RoutePlanner({ initialPendingOrders, initialAssignedRoutes, deliveryPeople, clients, agent, pharmacyAddress, pharmacyLocation }: RoutePlannerProps) {
+export function RoutePlanner({ 
+  initialPendingOrders, 
+  initialRoutesForMap, 
+  deliveryPeople, 
+  clients, 
+  agent, 
+  pharmacyLocation 
+}: RoutePlannerProps) {
   const [pendingOrders, setPendingOrders] = useState<Order[]>(initialPendingOrders);
-  const [assignedRoutes, setAssignedRoutes] = useState<Record<string, Order[]>>(initialAssignedRoutes);
+  const [routesForMap, setRoutesForMap] = useState<RouteInfo[]>(initialRoutesForMap);
   const [isCreateDialogOpen, setCreateDialogOpen] = useState(false);
   const [isAssignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -52,8 +55,8 @@ export function RoutePlanner({ initialPendingOrders, initialAssignedRoutes, deli
   // Effect to sync state with server-side props when they change (due to revalidation)
   useEffect(() => {
     setPendingOrders(initialPendingOrders);
-    setAssignedRoutes(initialAssignedRoutes);
-  }, [initialPendingOrders, initialAssignedRoutes]);
+    setRoutesForMap(initialRoutesForMap);
+  }, [initialPendingOrders, initialRoutesForMap]);
 
   const handleOpenAssignDialog = (order: Order) => {
     setSelectedOrder(order);
@@ -92,7 +95,7 @@ export function RoutePlanner({ initialPendingOrders, initialAssignedRoutes, deli
     setOptimizedPolyline(null); // Clear previous polyline
     try {
       const input = {
-        startAddress: pharmacyAddress.address,
+        startCoords: { lat: pharmacyLocation.lat, lng: pharmacyLocation.lng },
         orders: pendingOrders.map(order => ({
           orderId: order.id,
           address: order.deliveryLocation.address,
@@ -125,15 +128,34 @@ export function RoutePlanner({ initialPendingOrders, initialAssignedRoutes, deli
     }
   };
 
-  const routesForMap: RouteInfo[] = useMemo(() => Object.entries(assignedRoutes).map(([personId, orders], index) => {
-    const deliveryPerson = deliveryPeople.find(p => p.id === personId);
-    if (!deliveryPerson) return null;
-    return {
-      deliveryPerson,
-      orders,
-      color: ROUTE_COLORS[index % ROUTE_COLORS.length]
-    };
-  }).filter((r): r is RouteInfo => r !== null), [assignedRoutes, deliveryPeople]);
+  const handleOpenGoogleMaps = (route: RouteInfo) => {
+    const origin = `${pharmacyLocation.lat},${pharmacyLocation.lng}`;
+    
+    // Ensure we only use orders that have lat/lng
+    const validOrders = route.orders.filter(order => order.deliveryLocation.lat && order.deliveryLocation.lng);
+    
+    if (validOrders.length === 0) {
+        toast({
+            variant: "destructive",
+            title: "Sin Coordenadas",
+            description: "No se pueden generar las direcciones de Google Maps porque los pedidos en esta ruta no tienen coordenadas."
+        });
+        return;
+    }
+
+    const destination = `${validOrders[validOrders.length - 1].deliveryLocation.lat},${validOrders[validOrders.length - 1].deliveryLocation.lng}`;
+    const waypoints = validOrders.slice(0, -1).map(order => 
+        `${order.deliveryLocation.lat},${order.deliveryLocation.lng}`
+    ).join('|');
+
+    let googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}`;
+    if (waypoints) {
+        googleMapsUrl += `&waypoints=${waypoints}`;
+    }
+    
+    window.open(googleMapsUrl, '_blank');
+  };
+
 
   return (
     <>
@@ -189,17 +211,31 @@ export function RoutePlanner({ initialPendingOrders, initialAssignedRoutes, deli
                 <ScrollArea className="flex-1">
                     <CardContent>
                          <Accordion type="multiple" className="w-full">
-                            {routesForMap.length > 0 ? routesForMap.map(({ deliveryPerson, orders, color }) => (
-                                <AccordionItem value={deliveryPerson.id} key={deliveryPerson.id}>
-                                    <AccordionTrigger>
-                                        <div className="flex items-center gap-2">
-                                            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-                                            <UserIcon className="h-4 w-4 text-muted-foreground" />
-                                            <span>{deliveryPerson.name} ({orders.length} pedidos)</span>
-                                        </div>
-                                    </AccordionTrigger>
+                            {routesForMap.length > 0 ? routesForMap.map((route) => (
+                                <AccordionItem value={route.deliveryPerson.id} key={route.deliveryPerson.id}>
+                                    <div className="flex items-center w-full">
+                                        <AccordionTrigger className="flex-1">
+                                            <div className="flex items-center gap-2">
+                                                <div className="h-2 w-2 rounded-full" style={{ backgroundColor: route.color }} />
+                                                <UserIcon className="h-4 w-4 text-muted-foreground" />
+                                                <span>{route.deliveryPerson.name} ({route.orders.length} pedidos)</span>
+                                            </div>
+                                        </AccordionTrigger>
+                                        <Button 
+                                            variant="ghost" 
+                                            size="sm" 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenGoogleMaps(route);
+                                            }}
+                                            className="mr-2"
+                                        >
+                                            <MapIcon className="mr-2 text-green-600" />
+                                            Ver en Google Maps
+                                        </Button>
+                                    </div>
                                     <AccordionContent className="pl-2 space-y-3">
-                                        {orders.map((order, index) => (
+                                        {route.orders.map((order, index) => (
                                              <OrderCard 
                                                 key={order.id} 
                                                 order={order} 
@@ -231,7 +267,12 @@ export function RoutePlanner({ initialPendingOrders, initialAssignedRoutes, deli
                   </div>
               </div>
             )}
-            <Map pharmacyLocation={pharmacyAddress} routes={routesForMap} pendingOrders={pendingOrders} optimizedPolyline={optimizedPolyline}/>
+            <MapComponent 
+                pharmacyLocation={pharmacyLocation} 
+                routes={routesForMap} 
+                pendingOrders={pendingOrders} 
+                optimizedPolyline={optimizedPolyline} 
+            />
           </CardContent>
         </Card>
       </div>
@@ -257,3 +298,5 @@ export function RoutePlanner({ initialPendingOrders, initialAssignedRoutes, deli
     </>
   );
 }
+
+    

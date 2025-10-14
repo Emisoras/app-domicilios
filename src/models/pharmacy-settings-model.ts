@@ -1,9 +1,12 @@
+
 import mongoose, { Schema, Document, models, Model } from 'mongoose';
 
 export interface PharmacySettings {
     name: string;
     address: string;
     phone: string;
+    lat?: number;
+    lng?: number;
 }
 
 export interface PharmacySettingsDocument extends PharmacySettings, Document {
@@ -14,6 +17,8 @@ const PharmacySettingsSchema: Schema<PharmacySettingsDocument> = new Schema({
     name: { type: String, required: true },
     address: { type: String, required: true },
     phone: { type: String, required: true },
+    lat: { type: Number },
+    lng: { type: Number },
     singleton: {
         type: String,
         default: 'main_pharmacy',
