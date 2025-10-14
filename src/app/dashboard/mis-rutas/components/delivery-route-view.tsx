@@ -10,6 +10,26 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { LocateFixed, MapIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { sendWhatsAppNotification } from '@/lib/whatsapp';
+
+
+// Haversine formula to calculate distance between two points on Earth
+const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const toRadians = (deg: number) => deg * Math.PI / 180;
+    const R = 6371e3; // metres
+    const φ1 = toRadians(lat1);
+    const φ2 = toRadians(lat2);
+    const Δφ = toRadians(lat2 - lat1);
+    const Δλ = toRadians(lon2 - lon1);
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // in metres
+};
+
 
 // Haversine formula to calculate bearing between two points
 const getBearing = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -18,9 +38,11 @@ const getBearing = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const x = Math.cos(toRadians(lat1)) * Math.sin(toRadians(lat2)) -
               Math.sin(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.cos(toRadians(lon2 - lon1));
     const brng = Math.atan2(y, x);
-    const a = (brng * 180 / Math.PI + 360) % 360; // Normalize to 0-360
+    const a = (brng * 180 / NEARBY_DISTANCE_METERS + 360) % 360; // Normalize to 0-360
     return a;
 };
+
+const NEARBY_DISTANCE_METERS = 300;
 
 interface DeliveryRouteViewProps {
     initialOrders: Order[];
@@ -30,6 +52,7 @@ interface DeliveryRouteViewProps {
 
 export function DeliveryRouteView({ initialOrders, pharmacyLocation, sessionUserId }: DeliveryRouteViewProps) {
     const [orders, setOrders] = useState<Order[]>(initialOrders);
+    const [notifiedOrderIds, setNotifiedOrderIds] = useState<Set<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
 
@@ -41,7 +64,7 @@ export function DeliveryRouteView({ initialOrders, pharmacyLocation, sessionUser
     }, [initialOrders]);
 
     useEffect(() => {
-        if (!sessionUserId || initialOrders.length === 0) return;
+        if (!sessionUserId || orders.length === 0) return;
 
         const watchId = navigator.geolocation.watchPosition(
             (position) => {
@@ -55,6 +78,22 @@ export function DeliveryRouteView({ initialOrders, pharmacyLocation, sessionUser
                 updateUserLocation(sessionUserId, { lat: latitude, lng: longitude, bearing });
                 
                 lastPosition.current = { lat: latitude, lng: longitude };
+
+                // --- Automatic Nearby Notification Logic ---
+                orders.forEach(order => {
+                    if (order.deliveryLocation.lat && order.deliveryLocation.lng && !notifiedOrderIds.has(order.id)) {
+                        const distance = getDistance(latitude, longitude, order.deliveryLocation.lat, order.deliveryLocation.lng);
+                        
+                        if (distance <= NEARBY_DISTANCE_METERS) {
+                            sendWhatsAppNotification(order.client.phone, 'nearby', order);
+                            setNotifiedOrderIds(prev => new Set(prev).add(order.id));
+                            toast({
+                                title: 'Cliente Notificado',
+                                description: `Se ha enviado una notificación de cercanía a ${order.client.fullName}.`,
+                            });
+                        }
+                    }
+                });
             },
             (geoError) => {
                 console.error("Geolocation error:", geoError);
@@ -69,7 +108,7 @@ export function DeliveryRouteView({ initialOrders, pharmacyLocation, sessionUser
 
         // Cleanup the watcher when the component unmounts
         return () => navigator.geolocation.clearWatch(watchId);
-    }, [sessionUserId, initialOrders]);
+    }, [sessionUserId, orders, toast, notifiedOrderIds]);
 
     const handleOpenGoogleMaps = () => {
         // pharmacyLocation is guaranteed to be present here because of the server-side check
@@ -127,7 +166,7 @@ export function DeliveryRouteView({ initialOrders, pharmacyLocation, sessionUser
                 <LocateFixed className="h-4 w-4 !text-blue-600 dark:!text-blue-400" />
                 <AlertTitle>Seguimiento GPS Activo</AlertTitle>
                 <AlertDescription>
-                    Tu ubicación se está compartiendo en tiempo real para optimizar tu ruta y notificar a los clientes.
+                    Tu ubicación se está compartiendo en tiempo real para optimizar tu ruta y notificar a los clientes automáticamente cuando estés cerca.
                 </AlertDescription>
             </Alert>
             <AssignedRoutesList initialOrders={orders} />

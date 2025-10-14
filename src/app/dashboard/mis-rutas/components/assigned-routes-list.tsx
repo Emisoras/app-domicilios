@@ -1,13 +1,12 @@
 'use client';
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Clock, DollarSign, MapPin, BellRing } from "lucide-react";
+import { CheckCircle2, Clock, DollarSign, MapPin } from "lucide-react";
 import type { Order, OrderStatus } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { updateOrderStatus } from '@/actions/order-actions';
-import { sendWhatsAppNotification } from '@/lib/whatsapp';
 
 const StatusBadge = ({ status }: { status: OrderStatus }) => {
     switch (status) {
@@ -30,13 +29,6 @@ interface AssignedRoutesListProps {
 export function AssignedRoutesList({ initialOrders }: AssignedRoutesListProps) {
     const [orders, setOrders] = useState(initialOrders);
     const { toast } = useToast();
-
-    const handleNotifyNearby = (order: Order) => {
-        // This function now needs to be a server action to call the API
-        // For now, we will just show a toast, as we need a dedicated server action.
-        sendWhatsAppNotification(order.client.phone, 'nearby', order);
-        toast({ title: 'Notificación Enviada', description: `Se ha enviado una notificación de cercanía a ${order.client.fullName}.` });
-    };
 
     const handleMarkDelivered = async (orderToUpdate: Order) => {
         const result = await updateOrderStatus(orderToUpdate.id, 'delivered');
@@ -72,10 +64,6 @@ export function AssignedRoutesList({ initialOrders }: AssignedRoutesListProps) {
                             </div>
                         </CardContent>
                         <CardFooter className="flex justify-end gap-2 border-t pt-4 mt-4">
-                            <Button variant="outline" size="sm" onClick={() => handleNotifyNearby(order)}>
-                                <BellRing className="mr-2 h-4 w-4" />
-                                Notificar Cercanía
-                            </Button>
                             <Button size="sm" onClick={() => handleMarkDelivered(order)}>
                                 <CheckCircle2 className="mr-2 h-4 w-4" />
                                 Marcar como Entregado
